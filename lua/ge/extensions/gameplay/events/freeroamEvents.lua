@@ -282,6 +282,7 @@ local races = {
         label = "Track",
         checkpointRoad = "trackloop",
         hotlap = 125,
+        runningStart = true,
         altRoute = {
             bestTime = 110,
             reward = 2000,
@@ -2103,29 +2104,33 @@ local function onBeamNGTrigger(data)
                 return
             end
             if vehicleSpeed > 5 then
-                displayMessage("You are too fast to stage.\nPlease back up and slow down to stage.", 2)
-                staged = nil
-            else
-                -- Reset race variables
-                activeAssets:hideAllAssets()
-                lapCount = 0
-                mHotlap = nil
-
-                -- Initialize displays if drag race
-                if raceName == "drag" then
-                    initDisplays()
-                    resetDisplays()
+                if races[raceName].runningStart then
+                    displayMessage("Hotlap Staged", 2)
+                    mHotlap = raceName
+                else
+                    displayMessage("You are too fast to stage.\nPlease back up and slow down to stage.", 2)
+                    staged = nil
+                    return
                 end
-
-                -- Load leaderboard
-                loadLeaderboard()
-
-                -- Set staged race
-                staged = raceName
-                print("Staged race: " .. raceName)
-                displayStagedMessage(raceName)
-                setActiveLight(raceName, "yellow")
             end
+            activeAssets:hideAllAssets()
+            lapCount = 0
+            mHotlap = nil
+
+            -- Initialize displays if drag race
+            if raceName == "drag" then
+                initDisplays()
+                resetDisplays()
+            end
+
+            -- Load leaderboard
+            loadLeaderboard()
+
+            -- Set staged race
+            staged = raceName
+            print("Staged race: " .. raceName)
+            displayStagedMessage(raceName)
+            setActiveLight(raceName, "yellow")
         elseif event == "exit" then
             staged = nil
             if not mActiveRace then
