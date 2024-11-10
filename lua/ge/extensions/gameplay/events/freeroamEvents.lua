@@ -47,6 +47,7 @@ local activeMarkers = {}
 local checkpointsHit = 0
 local totalCheckpoints = 0
 local currentExpectedCheckpoint = 1
+local invalidLap = false
 
 local leftTimeDigits = {}
 local rightTimeDigits = {}
@@ -919,25 +920,11 @@ local function payoutRace(data)
         return 0
     end
     local raceName = getActivityName(data)
-    if not isCareerModeActive() then
-        mActiveRace = nil
-        local message = ""
-        if races[raceName].hotlap then
-            message = string.format("%s\nTime: %s\nLap: %d", 
-                races[raceName].label, 
-                formatTime(in_race_time),
-                lapCount
-            )
-        else
-            message = string.format("%s\nTime: %s", races[raceName].label, formatTime(in_race_time))
-        end
-        displayMessage(message, 10)
-        return 0
-    end
     if data.event == "enter" and raceName == mActiveRace then
         mActiveRace = nil
+
         local time = races[raceName].bestTime
-        local reward = races[raceName].reward
+        local reward = invalidLap and 0 or races[raceName].reward 
         if mHotlap == raceName then
             time = races[raceName].hotlap
         end
@@ -948,6 +935,7 @@ local function payoutRace(data)
                 time = races[raceName].altRoute.hotlap
             end
         end
+
         local driftScore = 0
         if races[raceName].driftGoal then
             driftScore = getDriftScore()
@@ -958,6 +946,7 @@ local function payoutRace(data)
         if reward <= 0 then
             return 0
         end
+
         -- Save the best time to the leaderboard
         loadLeaderboard()
         local oldTime = getOldTime(raceName) or 0
@@ -973,9 +962,38 @@ local function payoutRace(data)
         if newBest then
             saveNewBestTime(raceName, driftScore)
         else
-            print("No new best time for" .. raceName)
             reward = reward / 2
         end
+        saveLeaderboard()
+
+        if not isCareerModeActive() then
+            mActiveRace = nil
+            local message = invalidLap and "Lap Invalidated\n" or ""
+            if newBest and not invalidLap then
+                message = message .. "New Best Time!\n"
+            end
+            
+            if races[raceName].hotlap then
+                message = message .. string.format("%s\nTime: %s\nLap: %d", 
+                    races[raceName].label, 
+                    formatTime(in_race_time),
+                    lapCount
+                )
+            else
+                message = message .. string.format("%s\nTime: %s", 
+                    races[raceName].label, 
+                    formatTime(in_race_time)
+                )
+            end
+            
+            if newBest and not invalidLap and oldTime ~= math.huge then
+                message = message .. string.format("\nPrevious Best: %s", formatTime(oldTime))
+            end
+            
+            displayMessage(message, 10)
+            return 0
+        end
+
         if races[raceName].hotlap then
             reward = reward * (1 + (lapCount - 1) / 10)
         end
@@ -1004,14 +1022,14 @@ local function payoutRace(data)
         print("totalReward:")
         printTable(totalReward)
         career_modules_payment.reward(totalReward, reason)
-        local message = ""
+        local message = invalidLap and "Lap Invalidated/n" or ""
         if races[raceName].driftGoal then
             message = driftCompletionMessage(oldScore, oldTime, driftScore, in_race_time, reward, xp, data)
         else
             message = raceCompletionMessage(newBest, oldTime, reward, xp, data)
         end
         ui_message(message, 20, "Reward")
-        saveLeaderboard()
+        
         career_saveSystem.saveCurrent()
         return reward
     end
@@ -1019,19 +1037,27 @@ end
 
 -- Simplified payoutRace function for drag races
 local function payoutDragRace(raceName, finishTime, finishSpeed)
-    -- Check if career mode is active
+    -- Load the leaderboard
+    loadLeaderboard()
+    local oldTime = getOldTime(raceName) or math.huge
+    local newBestTime = finishTime < oldTime
+
+    -- Update leaderboard if new best time
+    if newBestTime then
+        leaderboard[raceName] = {
+            bestTime = finishTime,
+            bestSpeed = finishSpeed
+        }
+    end
+    saveLeaderboard()
+
     if not isCareerModeActive() then
         local message = string.format("%s\nTime: %s\nSpeed: %.2f mph", races[raceName].label, formatTime(finishTime),
             finishSpeed)
         displayMessage(message, 10)
         return 0
     end
-
-    -- Load the leaderboard
-    loadLeaderboard()
-    local oldTime = getOldTime(raceName) or math.huge
-    local newBestTime = finishTime < oldTime
-
+    
     -- Get race data
     local raceData = races[raceName]
     local targetTime = raceData.bestTime
@@ -1041,14 +1067,6 @@ local function payoutDragRace(raceName, finishTime, finishSpeed)
     local reward = raceReward(targetTime, baseReward, finishTime)
     if reward <= 0 then
         reward = baseReward / 2 -- Minimum reward for completion
-    end
-
-    -- Update leaderboard if new best time
-    if newBestTime then
-        leaderboard[raceName] = {
-            bestTime = finishTime,
-            bestSpeed = finishSpeed
-        }
     end
 
     -- Calculate experience points
@@ -1091,7 +1109,6 @@ local function payoutDragRace(raceName, finishTime, finishSpeed)
     ui_message(message, 20, "Reward")
 
     -- Save the leaderboard and game state
-    saveLeaderboard()
     career_saveSystem.saveCurrent()
 
     return reward
@@ -1169,21 +1186,34 @@ end
 local function displayStagedMessage(raceName)
     local race = races[raceName]
     local times = leaderboard[raceName] or {}
+    local careerMode = isCareerModeActive()
     printTable(race)
     local message = string.format("Staged for %s.\n", race.label)
 
     local function addTimeInfo(bestTime, targetTime, reward, label)
         if not bestTime then
-            return string.format("%sTarget Time: %s\n(Achieve this to earn a reward of $%.2f and 1 Bonus Star)", label,
-                formatTime(targetTime), reward)
+            if careerMode then
+                return string.format("%sTarget Time: %s\n(Achieve this to earn a reward of $%.2f and 1 Bonus Star)", 
+                    label, formatTime(targetTime), reward)
+            else
+                return string.format("%sTarget Time: %s", label, formatTime(targetTime))
+            end
         elseif bestTime > targetTime then
-            return string.format(
-                "%sYour Best Time: %s | Target Time: %s\n(Achieve target to earn a reward of $%.2f and 1 Bonus Star)",
-                label, formatTime(bestTime), formatTime(targetTime), reward)
+            if careerMode then
+                return string.format("%sYour Best Time: %s | Target Time: %s\n(Achieve target to earn a reward of $%.2f and 1 Bonus Star)",
+                    label, formatTime(bestTime), formatTime(targetTime), reward)
+            else
+                return string.format("%sYour Best Time: %s | Target Time: %s",
+                    label, formatTime(bestTime), formatTime(targetTime))
+            end
         else
-            local potentialReward = raceReward(targetTime, reward, bestTime)
-            return string.format("%sYour Best Time: %s\n(Improve to earn at least $%.2f)", label, formatTime(bestTime),
-                potentialReward)
+            if careerMode then
+                local potentialReward = raceReward(targetTime, reward, bestTime)
+                return string.format("%sYour Best Time: %s\n(Improve to earn at least $%.2f)", 
+                    label, formatTime(bestTime), potentialReward)
+            else
+                return string.format("%sYour Best Time: %s", label, formatTime(bestTime))
+            end
         end
     end
 
@@ -1192,24 +1222,30 @@ local function displayStagedMessage(raceName)
         local bestScore = times.driftScore
         local bestTime = times.driftTime
         local targetScore = race.driftGoal
-        local targetTime = race.driftTargetTime -- Assuming this is set in race configuration
-
-        -- Fallback to race.bestTime if driftTargetTime is not set
-        if not targetTime then
-            targetTime = race.bestTime
-        end
+        local targetTime = race.driftTargetTime or race.bestTime
 
         if bestScore and bestTime then
             -- Show player's best score and time
-            message = message .. string.format(
-                "Your Best Drift Score: %d | Target Drift Score: %d\nYour Best Time: %s | Target Time: %s\n(Achieve targets to earn a reward of $%.2f and 1 Bonus Star)",
-                bestScore, targetScore, formatTime(bestTime), formatTime(targetTime), race.reward)
+            if careerMode then
+                message = message .. string.format(
+                    "Your Best Drift Score: %d | Target Drift Score: %d\nYour Best Time: %s | Target Time: %s\n(Achieve targets to earn a reward of $%.2f and 1 Bonus Star)",
+                    bestScore, targetScore, formatTime(bestTime), formatTime(targetTime), race.reward)
+            else
+                message = message .. string.format(
+                    "Your Best Drift Score: %d | Target Drift Score: %d\nYour Best Time: %s | Target Time: %s",
+                    bestScore, targetScore, formatTime(bestTime), formatTime(targetTime))
+            end
         else
             -- No previous best score/time
-            message = message ..
-                          string.format(
+            if careerMode then
+                message = message .. string.format(
                     "Target Drift Score: %d\nTarget Time: %s\n(Achieve these to earn a reward of $%.2f and 1 Bonus Star)",
                     targetScore, formatTime(targetTime), race.reward)
+            else
+                message = message .. string.format(
+                    "Target Drift Score: %d\nTarget Time: %s",
+                    targetScore, formatTime(targetTime))
+            end
         end
     else
         -- Handle normal time-based events
@@ -1236,12 +1272,12 @@ local function displayStagedMessage(raceName)
         end
     end
 
-    -- Add note for time-based events
-    if not race.driftGoal then
+    -- Add note for time-based events in career mode
+    if careerMode and not race.driftGoal then
         message = message .. "\n\n**Note: All rewards are cut by 50% if they are below your best time.**"
     end
 
-    displayMessage(message, 10)
+    displayMessage(message, 15)
 end
 
 local function calculateAngle(node1, node2, node3)
@@ -2101,10 +2137,11 @@ local function onBeamNGTrigger(data)
         if event == "enter" and mActiveRace == raceName and not hasFinishTrigger(raceName) then
             if not currCheckpoint or currCheckpoint ~= totalCheckpoints then
                 -- Player hasn't completed all checkpoints yet
-                displayMessage("You have not completed all checkpoints!", 5)
-                return
+                if not invalidLap then
+                    displayMessage("You have not completed all checkpoints!", 5)
+                    return
+                end
             end
-
             displayAssets(data)
             playCheckpointSound()
             timerActive = false
@@ -2122,6 +2159,7 @@ local function onBeamNGTrigger(data)
             if races[raceName].hotlap then
                 mHotlap = raceName
             end
+            invalidLap = false
         elseif event == "enter" and staged == raceName then
             -- Start the race
             saveAndSetTrafficAmount(0)
@@ -2202,11 +2240,31 @@ local function onBeamNGTrigger(data)
                     mAltRoute = true
                 end
             else
-                -- Player missed a checkpoint
                 local missedCheckpoints = checkpointIndex - currentExpectedCheckpoint
                 if missedCheckpoints > 0 then
-                    local message = string.format("You missed %d checkpoint(s). Go back to checkpoint %d.",
-                        missedCheckpoints, currentExpectedCheckpoint)
+                    -- Mark lap as invalid but continue with correct checkpoints
+                    invalidLap = true
+                    
+                    -- Remove all existing checkpoint markers
+                    for i = 1, #checkpoints do
+                        removeCheckpointMarker(i, false)
+                    end
+                    if altCheckpoints then
+                        for i = 1, #altCheckpoints do
+                            removeCheckpointMarker(i, true)
+                        end
+                    end
+
+                    -- Update current checkpoint and hit count
+                    currCheckpoint = checkpointIndex
+                    currentExpectedCheckpoint = checkpointIndex
+                    checkpointsHit = checkpointsHit + missedCheckpoints
+                    
+                    -- Enable next checkpoint
+                    enableCheckpoint(currentExpectedCheckpoint, isAlt)
+                    
+                    -- Display message about invalid lap but continuing
+                    local message = string.format("Missed a checkpoint\nLap Invalidated.", checkpointIndex)
                     displayMessage(message, 10)
                 end
             end
