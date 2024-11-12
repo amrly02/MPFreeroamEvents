@@ -3,16 +3,21 @@
 -- file, You can obtain one at http://beamng.com/bCDDL-1.1.txt
 local M = {}
 
-M.dependencies = {}
+M.dependencies = {
+    'gameplay_events_ghostSystem'
+}
 
 local checkpointSoundPath = 'art/sound/ui_checkpoint.ogg'
 
 -- Function to play the checkpoint sound
 local function playCheckpointSound()
     Engine.Audio.playOnce('AudioGui', checkpointSoundPath, {
-        volume = 4.5
+        volume = 3.5
     })
 end
+
+local ghostSystem = require('gameplay.events.ghostSystem')
+local useGhosts = false
 
 local debug = nil
 
@@ -310,6 +315,22 @@ local races = {
     }
 }
 
+
+local function onLeaderboardDataReceived(data)
+    if data and type(data) == "table" then
+        leaderboard = data
+        print("[LeaderboardManager] Received leaderboard data")
+    else
+        print("[LeaderboardManager] Received invalid leaderboard data")
+    end
+end
+
+local function onInit()
+    -- Register event handlers
+    --MPGameNetwork.AddEventHandler("receiveLeaderboard", onLeaderboardDataReceived)
+    print("FreeroamEvents loaded")
+end
+
 function ActiveAssets.new()
     local self = setmetatable({}, ActiveAssets)
     self.assets = {} -- Ensure this is always initialized as an empty table
@@ -348,7 +369,7 @@ end
 
 function ActiveAssets:hideAllAssets()
     if not self.assets then
-        print("Warning: self.assets is nil in hideAllAssets")
+        --print("Warning: self.assets is nil in hideAllAssets")
         self.assets = {} -- Reinitialize if it's nil
         return
     end
@@ -370,50 +391,50 @@ local activeAssets = ActiveAssets.new()
 
 -- Function to display assets
 local function displayAssets(data)
-    print("displayAssets function called with triggerName: " .. tostring(data.triggerName))
+    --print("displayAssets function called with triggerName: " .. tostring(data.triggerName))
     local triggerName = data.triggerName
     local newAssets = {}
 
     -- Unhide assets and add them to newAssets table
     for i = 0, maxAssets - 1 do
         local assetName = triggerName .. "asset" .. i
-        print("Searching for asset: " .. assetName)
+        --print("Searching for asset: " .. assetName)
         local asset = scenetree.findObject(assetName)
         if asset then
-            print("Asset found: " .. assetName)
+            --print("Asset found: " .. assetName)
             asset:setHidden(false)
             table.insert(newAssets, asset)
         else
-            print("Asset not found: " .. assetName)
+            --print("Asset not found: " .. assetName)
             break -- Stop if an asset is not found
         end
     end
 
     -- If no assets were found, return early
     if #newAssets == 0 then
-        print("No assets found for triggerName: " .. triggerName)
+        --print("No assets found for triggerName: " .. triggerName)
         return
     end
 
-    print("Number of new assets found: " .. #newAssets)
+    --print("Number of new assets found: " .. #newAssets)
 
     -- Add the new asset list to activeAssets
-    print("Attempting to add new asset list to activeAssets")
+    --print("Attempting to add new asset list to activeAssets")
     activeAssets:addAssetList(triggerName, newAssets)
 
     -- If we have reached the maximum number of active asset lists,
     -- we might want to do something with the oldest one
-    print("Number of active asset lists: " .. #activeAssets.assets)
+    --print("Number of active asset lists: " .. #activeAssets.assets)
     if #activeAssets.assets == maxActiveAssets then
-        print("Maximum number of active asset lists reached")
+        --print("Maximum number of active asset lists reached")
         local oldestAssetList = activeAssets:getOldestAssetList()
-        print("Oldest asset list triggerName: " .. oldestAssetList.triggerName)
+        --print("Oldest asset list triggerName: " .. oldestAssetList.triggerName)
         -- Here you can add code to clear or update the display of the oldest asset list
         -- For example:
         -- clearAssetListDisplay(oldestAssetList)
     end
 
-    print("displayAssets function completed")
+    --print("displayAssets function completed")
 end
 
 -- Function to check if career mode is active
@@ -421,8 +442,28 @@ local function isCareerModeActive()
     return career_career.isActive()
 end
 
+local function onLeaderboardDataReceived(data)
+    if data and type(data) == "table" then
+        leaderboard = data
+        print("Received leaderboard data from server")
+    else
+        print("Received invalid leaderboard data from server")
+    end
+end
+
 -- Function to read the leaderboard from the file
 local function loadLeaderboard()
+    if MPCoreNetwork and MPCoreNetwork.isMPSession() then
+        print("[LeaderboardManager] In multiplayer session, requesting leaderboard")
+        local data = {
+            playerID = MPCoreNetwork.getPlayerServerID()
+        }
+        TriggerServerEvent("requestLeaderboard", jsonEncode(data))
+    else
+        print("[LeaderboardManager] Not in multiplayer session")
+        -- Your existing single player load code here
+    end
+
     if not isCareerModeActive() then
         return
     end
@@ -458,12 +499,24 @@ end
 
 -- Function to save the leaderboard to the file in all autosave folders
 local function saveLeaderboard()
+    if MPCoreNetwork and MPCoreNetwork.isMPSession() then
+        print("[LeaderboardManager] In multiplayer session, saving leaderboard")
+        local data = {
+            playerID = MPCoreNetwork.getPlayerServerID(),
+            data = leaderboard
+        }
+        TriggerServerEvent("saveLeaderboard", jsonEncode(data))
+    else
+        print("[LeaderboardManager] Not in multiplayer session")
+        -- Your existing single player save code here
+    end
+
     if not isCareerModeActive() then
         return
     end
     local saveSlot, savePath = career_saveSystem.getCurrentSaveSlot()
-    print("saveSlot: " .. saveSlot)
-    print("savePath: " .. savePath)
+    --print("saveSlot: " .. saveSlot)
+    --print("savePath: " .. savePath)
 
     -- Extract the base path by removing the current autosave folder
     local basePath = savePath:match("(.*/)")
@@ -478,9 +531,9 @@ local function saveLeaderboard()
         if file then
             file:write(jsonEncode(leaderboard))
             file:close()
-            print("Saved leaderboard to: " .. filePath)
+            --print("Saved leaderboard to: " .. filePath)
         else
-            print("Error: Unable to open leaderboard file for writing: " .. filePath)
+            --print("Error: Unable to open leaderboard file for writing: " .. filePath)
         end
     end
 end
@@ -663,10 +716,10 @@ local function printTable(t, indent)
 
     for k, v in pairs(t) do
         if type(v) == "table" then
-            print(indentStr .. tostring(k) .. ":")
+            --print(indentStr .. tostring(k) .. ":")
             printTable(v, indent + 1)
         else
-            print(indentStr .. tostring(k) .. ": " .. tostring(v))
+            --print(indentStr .. tostring(k) .. ": " .. tostring(v))
         end
     end
 end
@@ -922,6 +975,7 @@ local function payoutRace(data)
     end
     local raceName = getActivityName(data)
     if data.event == "enter" and raceName == mActiveRace then
+        local msg = invalidLap and "Lap Invalidated\n" or ""
         mActiveRace = nil
 
         local time = races[raceName].bestTime
@@ -944,9 +998,6 @@ local function payoutRace(data)
         else
             reward = raceReward(time, reward)
         end
-        if reward <= 0 then
-            return 0
-        end
 
         -- Save the best time to the leaderboard
         loadLeaderboard()
@@ -960,12 +1011,21 @@ local function payoutRace(data)
             newBest = isNewBestTime(raceName, in_race_time)
         end
 
-        if newBest then
+        if newBest and not invalidLap then
             saveNewBestTime(raceName, driftScore)
         else
             reward = reward / 2
         end
         saveLeaderboard()
+
+        if newBest and not invalidLap and useGhosts then
+            -- Save new best ghost
+            print("Saving new best ghost")
+            ghostSystem.saveGhost(raceName)
+        end
+        if useGhosts then
+            ghostSystem.removeGhost(raceName)
+        end
 
         if not isCareerModeActive() then
             mActiveRace = nil
@@ -994,6 +1054,9 @@ local function payoutRace(data)
             displayMessage(message, 10)
             return 0
         end
+        if reward <= 0 then
+            return 0
+        end
 
         if races[raceName].hotlap then
             reward = reward * (1 + (lapCount - 1) / 10)
@@ -1020,7 +1083,7 @@ local function payoutRace(data)
             label = rewardLabel(raceName, newBest),
             tags = {"gameplay", "reward", "mission"}
         }
-        print("totalReward:")
+        --print("totalReward:")
         printTable(totalReward)
         career_modules_payment.reward(totalReward, reason)
         local message = invalidLap and "Lap Invalidated/n" or ""
@@ -1117,7 +1180,7 @@ end
 
 local function getDifference(raceName, currentCheckpointIndex)
     if not leaderboard[raceName] then
-        return 0
+        return nil
     end
 
     local splitTimes = {}
@@ -1136,9 +1199,27 @@ local function getDifference(raceName, currentCheckpointIndex)
     end
 
     if not splitTimes or not splitTimes[currentCheckpointIndex] then
-        return 0
+        return nil
     end
-    return mSplitTimes[currentCheckpointIndex] - splitTimes[currentCheckpointIndex]
+
+    -- Calculate the time difference for this split
+    local currentSplitDiff
+    if currentCheckpointIndex == 1 then
+        -- For first checkpoint, compare directly
+        currentSplitDiff = mSplitTimes[currentCheckpointIndex] - splitTimes[currentCheckpointIndex]
+    else
+        -- For subsequent checkpoints, compare the differences between splits
+        local previousBestSplit = splitTimes[currentCheckpointIndex] - splitTimes[currentCheckpointIndex - 1]
+        local currentSplit = mSplitTimes[currentCheckpointIndex] - mSplitTimes[currentCheckpointIndex - 1]
+        currentSplitDiff = currentSplit - previousBestSplit
+    end
+
+    return currentSplitDiff
+end
+
+local function formatSplitDifference(diff)
+    local sign = diff >= 0 and "+" or "-"
+    return string.format("%s%s", sign, formatTime(math.abs(diff)))
 end
 
 local function routeInfo(data)
@@ -1283,7 +1364,7 @@ end
 
 local function calculateAngle(node1, node2, node3)
     if not node1 or not node2 or not node3 then
-        print("Warning: Nil node encountered in calculateAngle")
+        --print("Warning: Nil node encountered in calculateAngle")
         return 0, "straight"
     end
     local vec1 = {
@@ -1316,7 +1397,7 @@ end
 
 local function calculateDistance(node1, node2)
     if not node1 or not node2 then
-        print("Warning: Nil node encountered in calculateDistance")
+        --print("Warning: Nil node encountered in calculateDistance")
         return 0
     end
     local dx, dy = node2.x - node1.x, node2.y - node1.y
@@ -1359,7 +1440,7 @@ local function processRoadNodes(mainNodes, altNodes)
     if not altNodes then
         altNodes = {}
     end
-    print("Starting processRoadNodes with " .. #mainNodes .. " main nodes and " .. (#altNodes or 0) .. " alt nodes")
+    --print("Starting processRoadNodes with " .. #mainNodes .. " main nodes and " .. (#altNodes or 0) .. " alt nodes")
 
     local function processRoute(nodes, isAlt)
         local segments = {}
@@ -1381,7 +1462,7 @@ local function processRoadNodes(mainNodes, altNodes)
             local function isDuplicatePosition(newPos)
                 for _, checkpoint in ipairs(checkpoints) do
                     if checkpoint.pos.x == newPos.x and checkpoint.pos.y == newPos.y and checkpoint.pos.z == newPos.z then
-                        print("Duplicate checkpoint position found, skipping...")
+                        --print("Duplicate checkpoint position found, skipping...")
                         return true
                     end
                 end
@@ -1419,8 +1500,8 @@ local function processRoadNodes(mainNodes, altNodes)
                     direction = direction,
                     width = roadWidth
                 })
-                print((isAlt and "Alt " or "") .. "Checkpoint added: Type: " .. type .. ", Index: " .. apexIndex ..
-                          ", Direction: " .. direction .. ", Width: " .. roadWidth)
+                --print((isAlt and "Alt " or "") .. "Checkpoint added: Type: " .. type .. ", Index: " .. apexIndex ..
+                --          ", Direction: " .. direction .. ", Width: " .. roadWidth)
             end
         end
 
@@ -1505,7 +1586,7 @@ local function processRoadNodes(mainNodes, altNodes)
             local distance = calculateDistance(firstCheckpoint.pos, lastCheckpoint.pos)
 
             if distance < MIN_CHECKPOINT_DISTANCE then
-                print("Adjusting last checkpoint: too close to first checkpoint")
+                --print("Adjusting last checkpoint: too close to first checkpoint")
 
                 local newLastIndex = lastCheckpoint.index
                 while newLastIndex > 1 and calculateDistance(nodes[newLastIndex], firstCheckpoint.pos) <
@@ -1516,9 +1597,9 @@ local function processRoadNodes(mainNodes, altNodes)
                 if newLastIndex > 1 and newLastIndex ~= lastCheckpoint.index then
                     lastCheckpoint.pos = nodes[newLastIndex]
                     lastCheckpoint.index = newLastIndex
-                    print("Last checkpoint moved to index: " .. newLastIndex)
+                    --print("Last checkpoint moved to index: " .. newLastIndex)
                 else
-                    print("Could not find a suitable position for the last checkpoint")
+                    --print("Could not find a suitable position for the last checkpoint")
                 end
             end
         end
@@ -1529,9 +1610,9 @@ local function processRoadNodes(mainNodes, altNodes)
         adjustLastCheckpoint(altCheckpoints, altNodes)
     end
 
-    print("Main route: Total checkpoints created: " .. #mainCheckpoints)
+    --print("Main route: Total checkpoints created: " .. #mainCheckpoints)
     if altCheckpoints then
-        print("Alt route: Total checkpoints created: " .. #altCheckpoints)
+        --print("Alt route: Total checkpoints created: " .. #altCheckpoints)
     end
 
     return mainCheckpoints, altCheckpoints
@@ -1543,7 +1624,7 @@ local function getRoad(roadName)
     if road and road:getClassName() == "DecalRoad" then
         return road
     else
-        print("Error: Road '" .. roadName .. "' not found or is not a DecalRoad")
+        --print("Error: Road '" .. roadName .. "' not found or is not a DecalRoad")
         return nil
     end
 end
@@ -1556,14 +1637,14 @@ local function getRoadNodes(roadName)
     end
 
     if not road then
-        print("Error: Road '" .. roadName .. "' not found")
+        --print("Error: Road '" .. roadName .. "' not found")
         return
     end
 
-    print("Road '" .. roadName .. "' found. Class: " .. road:getClassName())
+    --print("Road '" .. roadName .. "' found. Class: " .. road:getClassName())
 
     local nodeCount = road:getNodeCount()
-    print("Total nodes in the road: " .. nodeCount)
+    --print("Total nodes in the road: " .. nodeCount)
 
     local roadNodes = {}
     for i = 0, nodeCount - 1 do
@@ -1573,7 +1654,7 @@ local function getRoadNodes(roadName)
             y = pos.y,
             z = pos.z
         })
-        print("Node " .. i .. ": (" .. pos.x .. ", " .. pos.y .. ", " .. pos.z .. ")")
+        --print("Node " .. i .. ": (" .. pos.x .. ", " .. pos.y .. ", " .. pos.z .. ")")
     end
     return roadNodes
 end
@@ -1628,7 +1709,7 @@ local function mergeRoads(road1, road2)
     printTable(connections)
 
     if #connections == 0 then
-        print("Roads cannot be merged: no close endpoints found")
+        --print("Roads cannot be merged: no close endpoints found")
         return nil
     end
 
@@ -1696,17 +1777,17 @@ local function mergeRoads(road1, road2)
         end
     end
 
-    print(string.format("Roads merged with %d connection(s)", #connections))
-    print(string.format("Merged road has %d nodes (Road1: %d-%d%s, Road2: %d-%d%s)", #mergedNodes, start1, end1,
-        reverseRoad1 and " reversed" or "", start2, end2, reverseRoad2 and " reversed" or ""))
-    print(string.format("Number of junctions: %d", #junctions))
+    --print(string.format("Roads merged with %d connection(s)", #connections))
+    --print(string.format("Merged road has %d nodes (Road1: %d-%d%s, Road2: %d-%d%s)", #mergedNodes, start1, end1,
+    --    reverseRoad1 and " reversed" or "", start2, end2, reverseRoad2 and " reversed" or ""))
+    --print(string.format("Number of junctions: %d", #junctions))
 
-    print("\nMerged Nodes:")
+    --print("\nMerged Nodes:")
     for i, node in ipairs(mergedNodes) do
         if node.isJunction then
-            print(string.format("Node %d: JUNCTION (%.2f, %.2f, %.2f)", i, node.x, node.y, node.z))
+            --print(string.format("Node %d: JUNCTION (%.2f, %.2f, %.2f)", i, node.x, node.y, node.z))
         else
-            print(string.format("Node %d: (%.2f, %.2f, %.2f)", i, node.x, node.y, node.z))
+            --print(string.format("Node %d: (%.2f, %.2f, %.2f)", i, node.x, node.y, node.z))
         end
     end
     return mergedNodes
@@ -1720,7 +1801,7 @@ local function createCheckpoint(index, isAlt)
         checkpoint = checkpoints[index]
     end
     if not checkpoint then
-        print("Error: No checkpoint data found for index " .. index)
+        --print("Error: No checkpoint data found for index " .. index)
         return
     end
 
@@ -1747,13 +1828,13 @@ local function createCheckpoint(index, isAlt)
     end
     checkpoint.object:registerObject(triggerName)
 
-    print("Checkpoint " .. index .. " created at: " .. tostring(position) .. " with radius: " .. radius)
+    --print("Checkpoint " .. index .. " created at: " .. tostring(position) .. " with radius: " .. radius)
     return checkpoint
 end
 local function createCheckpointMarker(index, alt)
     local checkpoint = alt and altCheckpoints[index] or checkpoints[index]
     if not checkpoint then
-        print("No checkpoint data for index " .. index)
+        --print("No checkpoint data for index " .. index)
         return
     end
 
@@ -1771,8 +1852,8 @@ local function createCheckpointMarker(index, alt)
     marker:registerObject(markerName)
 
     checkpoint.marker = marker
-    print("Checkpoint marker " .. index .. " created at position: " .. tostring(position) .. " with width: " ..
-              checkpoint.width)
+    --print("Checkpoint marker " .. index .. " created at position: " .. tostring(position) .. " with width: " ..
+    --          checkpoint.width)
     return checkpoint
 end
 
@@ -1806,38 +1887,38 @@ local function removeCheckpoint(index, alt)
             checkpoint.marker:delete()
             checkpoint.marker = nil
         end
-        print("Checkpoint " .. index .. " removed")
+        --print("Checkpoint " .. index .. " removed")
     end
     return checkpoint
 end
 
 local function createCheckpoints()
-    print("Removing checkpoints")
+    --print("Removing checkpoints")
     printTable(checkpoints)
     -- Clear existing checkpoint objects and markers
     for i = 1, #checkpoints do
-        print("Removing checkpoint " .. i)
+        --print("Removing checkpoint " .. i)
         removeCheckpoint(i)
     end
-    print("Creating checkpoints")
+    --print("Creating checkpoints")
     printTable(checkpoints)
     -- Create new checkpoint objects and markers
     for i = 1, #checkpoints do
-        print("Creating checkpoint " .. i)
+        --print("Creating checkpoint " .. i)
         createCheckpoint(i)
     end
 
     if altCheckpoints then
-        print("Removing alt checkpoints")
+        --print("Removing alt checkpoints")
         printTable(altCheckpoints)
         for i = 1, #altCheckpoints do
-            print("Removing alt checkpoint " .. i)
+            --print("Removing alt checkpoint " .. i)
             removeCheckpoint(i, true)
         end
-        print("Creating alt checkpoints")
+        --print("Creating alt checkpoints")
         printTable(altCheckpoints)
         for i = 1, #altCheckpoints do
-            print("Creating alt checkpoint " .. i)
+            --print("Creating alt checkpoint " .. i)
             createCheckpoint(i, true)
         end
     end
@@ -1858,7 +1939,7 @@ local function isNodeGroupLoop(nodeGroup)
     -- Check if the first and last nodes are close enough to be considered the same point
     local isLoop = math.abs(firstNode.x - lastNode.x) < threshold and math.abs(firstNode.y - lastNode.y) < threshold and
                        math.abs(firstNode.z - lastNode.z) < threshold
-    print("isNodeGroupLoop isLoop: " .. tostring(isLoop))
+    --print("isNodeGroupLoop isLoop: " .. tostring(isLoop))
     return isLoop
 end
 
@@ -1879,10 +1960,10 @@ local function enableCheckpoint(checkpointIndex, alt)
         end
     end
     currentExpectedCheckpoint = index[1]
-    print("Current expected checkpoint: " .. currentExpectedCheckpoint)
-    print("Index")
+    --print("Current expected checkpoint: " .. currentExpectedCheckpoint)
+    --print("Index")
     printTable(index)
-    print("ALT")
+    --print("ALT")
     printTable(ALT)
     local checkpoint = {}
     if ALT[1] then
@@ -1928,7 +2009,7 @@ end
 
 local function log(message)
     if debug then
-        print("[RoadCheck] " .. message)
+        --print("[RoadCheck] " .. message)
     end
 end
 
@@ -1949,7 +2030,7 @@ local function printRoadInfo()
 end
 
 local function removeCheckpoints()
-    print("Removing all checkpoints and markers")
+    --print("Removing all checkpoints and markers")
 
     -- Function to remove checkpoints from a given list
     local function removeCheckpointList(checkpointList)
@@ -1989,7 +2070,7 @@ local function removeCheckpoints()
     -- Reset the checkpoint tables
     checkpoints = {}
     altCheckpoints = {}
-    print("All checkpoints and markers removed")
+    --print("All checkpoints and markers removed")
 end
 
 local function exitRace()
@@ -2012,6 +2093,10 @@ local function exitRace()
         if gameplay_drift_general.getContext() == "inChallenge" then
             gameplay_drift_general.setContext("inFreeRoam")
             gameplay_drift_general.reset()
+        end
+        if useGhosts then
+            print("Removing all ghosts")
+            ghostSystem.removeAllGhosts()
         end
     end
 end
@@ -2061,7 +2146,7 @@ local function onBeamNGTrigger(data)
     local triggerType, raceName, rest = triggerName:match("^([^_]+)_([^_]+)(.*)$")
 
     if not triggerType or not raceName then
-        print("Trigger name doesn't match expected pattern.")
+        --print("Trigger name doesn't match expected pattern.")
         return
     end
 
@@ -2128,7 +2213,7 @@ local function onBeamNGTrigger(data)
 
             -- Set staged race
             staged = raceName
-            print("Staged race: " .. raceName)
+            --print("Staged race: " .. raceName)
             displayStagedMessage(raceName)
             setActiveLight(raceName, "yellow")
         elseif event == "exit" then
@@ -2152,6 +2237,11 @@ local function onBeamNGTrigger(data)
             timerActive = false
             lapCount = lapCount + 1
             local reward = payoutRace(data)
+            if useGhosts then
+                print("Starting Ghost Recording")
+                ghostSystem.startRecording(raceName)
+                ghostSystem.spawnGhost(raceName)
+            end
             currCheckpoint = nil
             mSplitTimes = {}
             mActiveRace = raceName
@@ -2167,6 +2257,11 @@ local function onBeamNGTrigger(data)
             invalidLap = false
         elseif event == "enter" and staged == raceName then
             -- Start the race
+            if useGhosts then
+                print("Starting Ghost Recording")
+                ghostSystem.startRecording(raceName)
+                ghostSystem.spawnGhost(raceName)
+            end
             saveAndSetTrafficAmount(0)
             displayAssets(data)
             timerActive = true
@@ -2177,12 +2272,12 @@ local function onBeamNGTrigger(data)
             displayMessage(getStartMessage(raceName), 5)
             setActiveLight(raceName, "green")
             if tableContains(races[raceName].type, "drift") then
-                print("Drift race detected")
+                --print("Drift race detected")
                 gameplay_drift_general.setContext("inChallenge")
                 if gameplay_drift_drift then
                     gameplay_drift_drift.setVehId(data.subjectID)
                 else
-                    print("Warning: gameplay_drift_drift module not available")
+                    --print("Warning: gameplay_drift_drift module not available")
                 end
             end
 
@@ -2227,8 +2322,20 @@ local function onBeamNGTrigger(data)
                 playCheckpointSound()
 
                 -- Display checkpoint message
-                local checkpointMessage = string.format("Checkpoint %d/%d reached\nTime: %s", checkpointsHit,
-                    totalCheckpoints, formatTime(in_race_time))
+                local checkpointMessage = ""
+                local splitDiff = getDifference(raceName, checkpointsHit)
+                if splitDiff then
+                    checkpointMessage = string.format("Checkpoint %d/%d - Time: %s\nSplit: %s", 
+                        checkpointsHit,
+                        totalCheckpoints, 
+                        formatTime(in_race_time),
+                        formatSplitDifference(splitDiff))
+                else
+                    checkpointMessage = string.format("Checkpoint %d/%d - Time: %s", 
+                        checkpointsHit,
+                        totalCheckpoints, 
+                        formatTime(in_race_time))
+                end
                 displayMessage(checkpointMessage, 7)
                 displayAssets(data)
 
@@ -2262,8 +2369,8 @@ local function onBeamNGTrigger(data)
 
                     -- Update current checkpoint and hit count
                     currCheckpoint = checkpointIndex
-                    currentExpectedCheckpoint = checkpointIndex
-                    checkpointsHit = checkpointsHit + missedCheckpoints
+                    currentExpectedCheckpoint = currentExpectedCheckpoint + missedCheckpoints
+                    checkpointsHit = checkpointsHit + missedCheckpoints + 1
                     
                     -- Enable next checkpoint
                     enableCheckpoint(currentExpectedCheckpoint, isAlt)
@@ -2274,6 +2381,7 @@ local function onBeamNGTrigger(data)
                 end
             end
         end
+    
     elseif triggerType == "finish" then
         if event == "enter" and mActiveRace == raceName then
             -- Finish the race
@@ -2291,7 +2399,7 @@ local function onBeamNGTrigger(data)
                 local finalScore = getDriftScore()
                 if gameplay_drift_general.getContext() == "inChallenge" then
                     gameplay_drift_general.setContext("inFreeRoam")
-                    print("Final Drift Score: " .. tostring(math.floor(finalScore)), 1, "info")
+                    --print("Final Drift Score: " .. tostring(math.floor(finalScore)), 1, "info")
                 end
             end
 
@@ -2302,7 +2410,7 @@ local function onBeamNGTrigger(data)
             displayMessage("Race Finished!", 5)
         end
     else
-        print("Unknown trigger type: " .. triggerType)
+        --print("Unknown trigger type: " .. triggerType)
     end
 end
 
@@ -2497,7 +2605,7 @@ local function spawnAINextToPlayer(data)
     end
     local playerVehicle = safeGetPlayerVehicle()
     if not playerVehicle or playerVehicle:getID() ~= data.subjectID then
-        print("No player vehicle found")
+        --print("No player vehicle found")
         return
     end
 
@@ -2505,22 +2613,22 @@ local function spawnAINextToPlayer(data)
     local playerRot = playerVehicle:getRotation()
 
     if not playerPos or not playerRot then
-        print("Unable to get player position or rotation")
+        --print("Unable to get player position or rotation")
         return
     end
 
-    print("Player position: " .. tostring(playerPos))
-    print("Player rotation: " .. tostring(playerRot))
+    --print("Player position: " .. tostring(playerPos))
+    --print("Player rotation: " .. tostring(playerRot))
 
     -- Offset the AI spawn position to the right of the player and slightly above ground
     local spawnPos = vec3(playerPos.x + 5, playerPos.y, playerPos.z + 1)
 
-    print("Spawn position: " .. tostring(spawnPos))
+    --print("Spawn position: " .. tostring(spawnPos))
 
     -- Use a specific vehicle model that's likely to exist
     local aiVehicleModel = chooseVehicle()
 
-    print("Attempting to spawn vehicle model: " .. aiVehicleModel)
+    --print("Attempting to spawn vehicle model: " .. aiVehicleModel)
 
     -- Spawn the AI vehicle
     local options = {
@@ -2534,11 +2642,11 @@ local function spawnAINextToPlayer(data)
     end)
 
     if not success or not aiVehicle then
-        print("Failed to spawn AI vehicle: " .. tostring(aiVehicle))
+        --print("Failed to spawn AI vehicle: " .. tostring(aiVehicle))
         return
     end
 
-    print("AI vehicle spawned successfully")
+    --print("AI vehicle spawned successfully")
 
     -- Set up AI driver
     local success, error = pcall(function()
@@ -2547,9 +2655,9 @@ local function spawnAINextToPlayer(data)
     end)
 
     if not success then
-        print("Error setting AI to chase player: " .. tostring(error))
+        --print("Error setting AI to chase player: " .. tostring(error))
     else
-        print("AI vehicle set to chase player")
+        --print("AI vehicle set to chase player")
     end
 
     return aiVehicle
@@ -2564,9 +2672,12 @@ local function onUpdate(dtReal, dtSim, dtRaw)
     --   dtReal (number): Real delta time.
     --   dtSim (number): Simulated delta time.
     --   dtRaw (number): Raw delta time.
+    --if useGhosts then
+    --    ghostSystem.onUpdate(dtSim)
+    --end
     if mActiveRace and races[mActiveRace].checkpointRoad then
         checkPlayerOnRoad()
-        -- print("checking player on road")
+        -- --print("checking player on road")
     end
     if timerActive == true then
         in_race_time = in_race_time + dtSim
@@ -2598,5 +2709,9 @@ M.onPursuitAction = onPursuitAction
 M.displayStagedMessage = displayStagedMessage
 M.payoutDragRace = payoutDragRace
 M.getStartMessage = getStartMessage
+
+M.setGhostsEnabled = function(enabled) useGhosts = enabled end
+M.isGhostsEnabled = function() return useGhosts end
+M.onInit = onInit
 
 return M
