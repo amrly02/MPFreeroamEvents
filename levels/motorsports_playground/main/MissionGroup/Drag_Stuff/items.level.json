@@ -1,0 +1,17 @@
+{"class":"TSStatic","persistentId":"4287c388-b9ce-4244-b9d7-43023da85ca6","__parent":"Drag_Stuff","position":[612.253662,252.045654,10.6114473],"isRenderEnabled":false,"locked":true,"playAmbient":false,"rotationMatrix":[-1,8.74227766e-08,0,-8.74227766e-08,-1,0,0,0,1],"shapeName":"/levels/motorsports_playground/art/customs/dragtree/xmasTree.dae","useInstanceRenderData":true}
+{"class":"TSStatic","persistentId":"105e47ba-9b73-45a6-a4da-2bcd4cee2729","__parent":"Drag_Stuff","position":[-906.002808,961.371826,14.6757917],"isRenderEnabled":false,"locked":true,"playAmbient":false,"rotationMatrix":[0.0891327485,-0.9960199,0,0.9960199,0.0891327485,0,0,0,1],"shapeName":"/levels/motorsports_playground/art/customs/dragtree/xmasTree.dae","useInstanceRenderData":true}
+{"class":"TSStatic","persistentId":"f06080d0-1518-439b-9b88-50a90c793c43","__parent":"Drag_Stuff","position":[575.403259,320.136169,10.6114473],"isRenderEnabled":false,"locked":true,"playAmbient":false,"rotationMatrix":[-1,8.74227766e-08,0,-8.74227766e-08,-1,0,0,0,1],"shapeName":"/levels/motorsports_playground/art/customs/dragtree/xmasTree.dae","useInstanceRenderData":true}
+{"class":"TSStatic","persistentId":"fe27926f-25c2-41f8-9ee9-00842738723b","__parent":"Drag_Stuff","position":[-16.5055847,-732.84137,12.996748],"isRenderEnabled":false,"locked":true,"playAmbient":false,"rotationMatrix":[-1,8.74227766e-08,0,-8.74227766e-08,-1,0,0,0,1],"shapeName":"/levels/motorsports_playground/art/customs/dragtree/xmasTree.dae","useInstanceRenderData":true}
+{"name":"AirstripDrag","class":"SimGroup","persistentId":"eac3cd67-91a8-4a42-9d34-ae311577b0b5","__parent":"Drag_Stuff","locked":true}
+{"name":"ScoreboardR","class":"SimGroup","persistentId":"77f74702-7b44-4888-88ca-a0e87a837b74","__parent":"Drag_Stuff","locked":true}
+{"name":"ScoreboardL","class":"SimGroup","persistentId":"f9eefb33-9fd4-40ac-b57f-a1732fb5786d","__parent":"Drag_Stuff"}
+{"name":"Drag_Triggers","class":"SimGroup","persistentId":"2c373973-0bf0-4980-b04d-95b8e7763156","__parent":"Drag_Stuff","locked":true}
+{"name":"ScoreboardR1","class":"SimGroup","persistentId":"aed7fa5c-6c1b-4219-829d-b4978c0270d7","__parent":"Drag_Stuff","locked":true}
+{"name":"ScoreboardL1","class":"SimGroup","persistentId":"40f9d698-4035-4345-96e3-3ca81ad2291e","__parent":"Drag_Stuff","locked":true}
+{"name":"DragTriggers1","class":"SimGroup","persistentId":"05ccc7c4-f4a8-4aed-84f5-7ff157461a3b","__parent":"Drag_Stuff","locked":true}
+{"name":"ScoreboarR2","class":"SimGroup","persistentId":"201916bf-858f-47b8-a2cc-7c33ea6dba15","__parent":"Drag_Stuff","locked":true}
+{"name":"ScoreboardL2","class":"SimGroup","persistentId":"1f32a0d4-41f1-4319-a0d9-76cf4db7a7f1","__parent":"Drag_Stuff","locked":true}
+{"name":"DragTriggers2","class":"SimGroup","persistentId":"6e418ed5-fd7e-4698-9325-2b8fdaada6ae","__parent":"Drag_Stuff","locked":true}
+{"name":"ScoreboardR3","class":"SimGroup","persistentId":"d43acaa4-0033-4a5c-94de-d554439a52bd","__parent":"Drag_Stuff","locked":true}
+{"name":"ScoreboardL3","class":"SimGroup","persistentId":"692c1545-74a7-4e11-a47d-71f00eef8feb","__parent":"Drag_Stuff","locked":true}
+{"name":"DragTriggers3","class":"SimGroup","persistentId":"8d696e02-0d7b-4207-b8f5-1df9a745e34e","__parent":"Drag_Stuff","locked":true}

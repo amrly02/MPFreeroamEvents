@@ -307,6 +307,15 @@ local races = {
         label = "Dirt Circuit",
         type = {"motorsport", "apexRacing"}
     },
+    rallyx = {
+        bestTime = 40,
+        reward = 2000,
+        checkpointRoad = "rallyx2",
+        hotlap = 35,
+        runningStart = true,
+        label = "RallyX",
+        type = {"motorsport"}
+    },
     testTrack = {
         bestTime = 5.5,
         reward = 1000,
@@ -453,6 +462,7 @@ end
 
 -- Function to read the leaderboard from the file
 local function loadLeaderboard()
+    --[[
     if MPCoreNetwork and MPCoreNetwork.isMPSession() then
         print("[LeaderboardManager] In multiplayer session, requesting leaderboard")
         local data = {
@@ -463,6 +473,7 @@ local function loadLeaderboard()
         print("[LeaderboardManager] Not in multiplayer session")
         -- Your existing single player load code here
     end
+    --]]
 
     if not isCareerModeActive() then
         return
@@ -499,6 +510,7 @@ end
 
 -- Function to save the leaderboard to the file in all autosave folders
 local function saveLeaderboard()
+    --[[
     if MPCoreNetwork and MPCoreNetwork.isMPSession() then
         print("[LeaderboardManager] In multiplayer session, saving leaderboard")
         local data = {
@@ -510,6 +522,7 @@ local function saveLeaderboard()
         print("[LeaderboardManager] Not in multiplayer session")
         -- Your existing single player save code here
     end
+    --]]
 
     if not isCareerModeActive() then
         return
