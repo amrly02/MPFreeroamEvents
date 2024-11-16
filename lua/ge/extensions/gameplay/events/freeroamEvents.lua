@@ -1217,10 +1217,19 @@ local function getDifference(raceName, currentCheckpointIndex)
 
     -- Calculate the time difference for this split
     local currentSplitDiff
+    if not mSplitTimes[currentCheckpointIndex] or not splitTimes[currentCheckpointIndex] then
+        return nil
+    end
+
     if currentCheckpointIndex == 1 then
         -- For first checkpoint, compare directly
         currentSplitDiff = mSplitTimes[currentCheckpointIndex] - splitTimes[currentCheckpointIndex]
     else
+        -- Check if we have the previous checkpoint times before calculating
+        if not mSplitTimes[currentCheckpointIndex - 1] or not splitTimes[currentCheckpointIndex - 1] then
+            return nil
+        end
+        
         -- For subsequent checkpoints, compare the differences between splits
         local previousBestSplit = splitTimes[currentCheckpointIndex] - splitTimes[currentCheckpointIndex - 1]
         local currentSplit = mSplitTimes[currentCheckpointIndex] - mSplitTimes[currentCheckpointIndex - 1]
@@ -2590,7 +2599,7 @@ local function checkPlayerOnRoad()
         return false
     elseif isWrongDirection then
         if currentTime - lastAlertTime > ALERT_COOLDOWN then
-            ui_message("Warning: You're going the wrong way!", 3, "info")
+            --ui_message("Warning: You're going the wrong way!", 3, "info")
             lastAlertTime = currentTime
         end
         log("Player going wrong direction")
