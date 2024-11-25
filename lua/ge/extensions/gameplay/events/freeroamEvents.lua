@@ -299,6 +299,15 @@ local races = {
         },
         type = {"motorsport", "apexRacing"}
     },
+    hirochi = {
+        bestTime = 140,
+        reward = 2000,
+        checkpointRoad = {"Hirochi1", "Hirochi2"},
+        hotlap = 125,
+        runningStart = true,
+        label = "Hirochi Raceway",
+        type = {"motorsport", "apexRacing"}
+    },
     dirtCircuit = {
         bestTime = 65,
         reward = 2000,
@@ -335,9 +344,6 @@ local function onLeaderboardDataReceived(data)
 end
 
 local function onInit()
-    -- Register event handlers
-    --MPGameNetwork.AddEventHandler("receiveLeaderboard", onLeaderboardDataReceived)
-    print("FreeroamEvents loaded")
 end
 
 function ActiveAssets.new()
@@ -462,19 +468,6 @@ end
 
 -- Function to read the leaderboard from the file
 local function loadLeaderboard()
-    --[[
-    if MPCoreNetwork and MPCoreNetwork.isMPSession() then
-        print("[LeaderboardManager] In multiplayer session, requesting leaderboard")
-        local data = {
-            playerID = MPCoreNetwork.getPlayerServerID()
-        }
-        TriggerServerEvent("requestLeaderboard", jsonEncode(data))
-    else
-        print("[LeaderboardManager] Not in multiplayer session")
-        -- Your existing single player load code here
-    end
-    --]]
-
     if not isCareerModeActive() then
         return
     end
@@ -1527,6 +1520,52 @@ local function processRoadNodes(mainNodes, altNodes)
             end
         end
 
+        local function addStraightCheckpoints()
+            if #checkpoints < 2 then return end
+            
+            local newCheckpoints = {}
+            
+            -- Function to insert checkpoint between two existing ones
+            local function insertMiddleCheckpoint(cp1, cp2)
+                -- Calculate the distance between checkpoints
+                local distance = calculateDistance(cp1.pos, cp2.pos)
+                
+                if distance > 450 then
+                    -- Find the middle node index
+                    local middleIndex = math.floor((cp1.index + cp2.index) / 2)
+                    
+                    -- Create new checkpoint at middle position
+                    table.insert(newCheckpoints, {
+                        pos = nodes[middleIndex],
+                        type = "straight",
+                        index = middleIndex,
+                        direction = "straight",
+                        width = 20
+                    })
+                end
+            end
+            
+            -- First pass: collect all new checkpoints needed
+            for i = 1, #checkpoints - 1 do
+                insertMiddleCheckpoint(checkpoints[i], checkpoints[i + 1])
+            end
+            
+            -- If it's a loop, check between last and first checkpoint
+            if isLoop then
+                insertMiddleCheckpoint(checkpoints[#checkpoints], checkpoints[1])
+            end
+            
+            -- Second pass: insert all new checkpoints into the main checkpoints table
+            -- Sort them by their index to maintain proper order
+            for _, newCp in ipairs(newCheckpoints) do
+                local insertIndex = 1
+                while insertIndex <= #checkpoints and checkpoints[insertIndex].index < newCp.index do
+                    insertIndex = insertIndex + 1
+                end
+                table.insert(checkpoints, insertIndex, newCp)
+            end
+        end
+
         local function finishSegment(endIndex)
             if currentSegment.length >= MIN_SEGMENT_LENGTH then
                 table.insert(segments, currentSegment)
@@ -1593,6 +1632,8 @@ local function processRoadNodes(mainNodes, altNodes)
         end
 
         finishSegment(#nodes)
+
+        addStraightCheckpoints()
 
         return checkpoints
     end
@@ -1865,6 +1906,7 @@ local function createCheckpointMarker(index, alt)
 
     local position = vec3(checkpoint.pos.x, checkpoint.pos.y, checkpoint.pos.z)
     marker:setPosition(position)
+    marker:setRotation(vec3(0, 0, 0))
 
     marker.scale = vec3(checkpoint.width / 2, checkpoint.width / 2, checkpoint.width)
     marker.useInstanceRenderData = true
@@ -1916,14 +1958,14 @@ end
 
 local function createCheckpoints()
     --print("Removing checkpoints")
-    printTable(checkpoints)
+    --printTable(checkpoints)
     -- Clear existing checkpoint objects and markers
     for i = 1, #checkpoints do
         --print("Removing checkpoint " .. i)
         removeCheckpoint(i)
     end
     --print("Creating checkpoints")
-    printTable(checkpoints)
+    --printTable(checkpoints)
     -- Create new checkpoint objects and markers
     for i = 1, #checkpoints do
         --print("Creating checkpoint " .. i)
@@ -1932,13 +1974,13 @@ local function createCheckpoints()
 
     if altCheckpoints then
         --print("Removing alt checkpoints")
-        printTable(altCheckpoints)
+        --printTable(altCheckpoints)
         for i = 1, #altCheckpoints do
             --print("Removing alt checkpoint " .. i)
             removeCheckpoint(i, true)
         end
         --print("Creating alt checkpoints")
-        printTable(altCheckpoints)
+        --printTable(altCheckpoints)
         for i = 1, #altCheckpoints do
             --print("Creating alt checkpoint " .. i)
             createCheckpoint(i, true)
@@ -1984,9 +2026,9 @@ local function enableCheckpoint(checkpointIndex, alt)
     currentExpectedCheckpoint = index[1]
     --print("Current expected checkpoint: " .. currentExpectedCheckpoint)
     --print("Index")
-    printTable(index)
+    --printTable(index)
     --print("ALT")
-    printTable(ALT)
+    --printTable(ALT)
     local checkpoint = {}
     if ALT[1] then
         checkpoint = altCheckpoints[index[1]]
@@ -2308,7 +2350,11 @@ local function onBeamNGTrigger(data)
             MIN_CHECKPOINT_DISTANCE = races[raceName].minCheckpointDistance or 90
             if races[raceName].checkpointRoad then
                 -- Load main route nodes
-                roadNodes = getRoadNodes(races[raceName].checkpointRoad)
+                if type(races[raceName].checkpointRoad) == "table" then
+                    roadNodes = mergeRoads(races[raceName].checkpointRoad[1], races[raceName].checkpointRoad[2])
+                else
+                    roadNodes = getRoadNodes(races[raceName].checkpointRoad)
+                end
 
                 -- Check for alternative route
                 if races[raceName].altRoute and races[raceName].altRoute.checkpointRoad then
@@ -2347,11 +2393,19 @@ local function onBeamNGTrigger(data)
                 local checkpointMessage = ""
                 local splitDiff = getDifference(raceName, checkpointsHit)
                 if splitDiff then
-                    checkpointMessage = string.format("Checkpoint %d/%d - Time: %s\nSplit: %s", 
+                    local totalDiff = nil
+                    if mAltRoute then
+                        totalDiff = in_race_time - (leaderboard[raceName].altRoute and leaderboard[raceName].altRoute.splitTimes[checkpointsHit] or 0)
+                    else
+                        totalDiff = in_race_time - (leaderboard[raceName].splitTimes[checkpointsHit] or 0)
+                    end
+                    
+                    checkpointMessage = string.format("Checkpoint %d/%d - Time: %s\nSplit: %s | Total: %s", 
                         checkpointsHit,
                         totalCheckpoints, 
                         formatTime(in_race_time),
-                        formatSplitDifference(splitDiff))
+                        formatSplitDifference(splitDiff),
+                        formatSplitDifference(totalDiff))
                 else
                     checkpointMessage = string.format("Checkpoint %d/%d - Time: %s", 
                         checkpointsHit,
