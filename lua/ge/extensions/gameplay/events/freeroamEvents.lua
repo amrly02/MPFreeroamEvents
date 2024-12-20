@@ -3,21 +3,16 @@
 -- file, You can obtain one at http://beamng.com/bCDDL-1.1.txt
 local M = {}
 
-M.dependencies = {
-    'gameplay_events_ghostSystem'
-}
+M.dependencies = {}
 
 local checkpointSoundPath = 'art/sound/ui_checkpoint.ogg'
 
 -- Function to play the checkpoint sound
 local function playCheckpointSound()
     Engine.Audio.playOnce('AudioGui', checkpointSoundPath, {
-        volume = 3.5
+        volume = 2
     })
 end
-
-local ghostSystem = require('gameplay.events.ghostSystem')
-local useGhosts = false
 
 local debug = nil
 
@@ -293,7 +288,7 @@ local races = {
             reward = 2000,
             label = "Short Track",
             checkpointRoad = "trackalt",
-            mergeCheckpoints = {1, 10},
+            mergeCheckpoints = {1, 11},
             hotlap = 95,
             altInfo = "**Continue Left for Standard Track\nHair Pin Right for Short Track**"
         },
@@ -306,6 +301,16 @@ local races = {
         hotlap = 125,
         runningStart = true,
         label = "Hirochi Raceway",
+        type = {"motorsport", "apexRacing"}
+    },
+    automationTT = {
+        bestTime = 150,
+        reward = 2000,
+        checkpointRoad = {"automationTT1", "automationTT2"},
+        hotlap = 135,
+        runningStart = true,
+        label = "Automation Test Track",
+        apexOffset = 2,
         type = {"motorsport", "apexRacing"}
     },
     dirtCircuit = {
@@ -1024,15 +1029,6 @@ local function payoutRace(data)
         end
         saveLeaderboard()
 
-        if newBest and not invalidLap and useGhosts then
-            -- Save new best ghost
-            print("Saving new best ghost")
-            ghostSystem.saveGhost(raceName)
-        end
-        if useGhosts then
-            ghostSystem.removeGhost(raceName)
-        end
-
         if not isCareerModeActive() then
             mActiveRace = nil
             local message = invalidLap and "Lap Invalidated\n" or ""
@@ -1448,6 +1444,8 @@ local function findApex(nodes, startIndex, endIndex)
             apexIndex = i
         end
     end
+    local apexOffset = races[mActiveRace].apexOffset or 0
+    apexIndex = nodes[apexIndex + apexOffset] and apexIndex + apexOffset or #nodes
     return apexIndex
 end
 
@@ -1869,7 +1867,7 @@ local function createCheckpoint(index, isAlt)
     end
 
     if not checkpoint.width then
-        checkpoint.width = 20
+        checkpoint.width = 30
     end
 
     local position = vec3(checkpoint.pos.x, checkpoint.pos.y, checkpoint.pos.z)
@@ -1904,9 +1902,7 @@ local function createCheckpointMarker(index, alt)
     local marker = createObject('TSStatic')
     marker.shapeName = "art/shapes/interface/checkpoint_marker.dae"
 
-    local position = vec3(checkpoint.pos.x, checkpoint.pos.y, checkpoint.pos.z)
-    marker:setPosition(position)
-    marker:setRotation(vec3(0, 0, 0))
+    marker:setPosRot(checkpoint.pos.x, checkpoint.pos.y, checkpoint.pos.z, 0, 0, 0, 0)
 
     marker.scale = vec3(checkpoint.width / 2, checkpoint.width / 2, checkpoint.width)
     marker.useInstanceRenderData = true
@@ -2158,10 +2154,6 @@ local function exitRace()
             gameplay_drift_general.setContext("inFreeRoam")
             gameplay_drift_general.reset()
         end
-        if useGhosts then
-            print("Removing all ghosts")
-            ghostSystem.removeAllGhosts()
-        end
     end
 end
 
@@ -2182,7 +2174,7 @@ local function calculateTotalCheckpoints(race)
     -- If the player is on the alt route, adjust total checkpoints accordingly
     local total
     if mAltRoute then
-        total = altCount + (mainCount - mergePoints[2] + mergePoints[1] - 1)
+        total = altCount + (mainCount - mergePoints[2] + mergePoints[1])
     else
         total = mainCount
     end
@@ -2289,7 +2281,7 @@ local function onBeamNGTrigger(data)
         end
     elseif triggerType == "start" then
         if event == "enter" and mActiveRace == raceName and not hasFinishTrigger(raceName) then
-            if not currCheckpoint or currCheckpoint ~= totalCheckpoints then
+            if not currCheckpoint or checkpointsHit ~= totalCheckpoints then
                 -- Player hasn't completed all checkpoints yet
                 if not invalidLap then
                     displayMessage("You have not completed all checkpoints!", 5)
@@ -2301,11 +2293,6 @@ local function onBeamNGTrigger(data)
             timerActive = false
             lapCount = lapCount + 1
             local reward = payoutRace(data)
-            if useGhosts then
-                print("Starting Ghost Recording")
-                ghostSystem.startRecording(raceName)
-                ghostSystem.spawnGhost(raceName)
-            end
             currCheckpoint = nil
             mSplitTimes = {}
             mActiveRace = raceName
@@ -2321,11 +2308,6 @@ local function onBeamNGTrigger(data)
             invalidLap = false
         elseif event == "enter" and staged == raceName then
             -- Start the race
-            if useGhosts then
-                print("Starting Ghost Recording")
-                ghostSystem.startRecording(raceName)
-                ghostSystem.spawnGhost(raceName)
-            end
             saveAndSetTrafficAmount(0)
             displayAssets(data)
             timerActive = true
@@ -2383,11 +2365,22 @@ local function onBeamNGTrigger(data)
     elseif triggerType == "checkpoint" and checkpointIndex then
         if event == "enter" and mActiveRace == raceName then
             -- Ensure that the checkpoint is the expected one
-            if (checkpointIndex == currentExpectedCheckpoint) or (checkpointIndex == 1 and currentExpectedCheckpoint == races[raceName].altRoute.mergeCheckpoints[1] and isAlt) then
+            if (checkpointIndex == currentExpectedCheckpoint) or (checkpointIndex == 1 and isAlt) or (currentExpectedCheckpoint == races[raceName].altRoute.mergeCheckpoints[1] and isAlt) then
                 checkpointsHit = checkpointsHit + 1
                 currCheckpoint = checkpointIndex
                 mSplitTimes[checkpointsHit] = in_race_time
                 playCheckpointSound()
+
+                -- Prepare the next checkpoint
+                if isAlt then
+                    currentExpectedCheckpoint = checkpointIndex
+                end
+
+                enableCheckpoint(currentExpectedCheckpoint, isAlt)
+                if isAlt and not mAltRoute then
+                    mAltRoute = true
+                    totalCheckpoints = calculateTotalCheckpoints(races[raceName])
+                end
 
                 -- Display checkpoint message
                 local checkpointMessage = ""
@@ -2417,16 +2410,6 @@ local function onBeamNGTrigger(data)
 
                 -- Remove the marker for this checkpoint
                 removeCheckpointMarker(checkpointIndex, isAlt)
-
-                -- Prepare the next checkpoint
-                if isAlt then
-                    currentExpectedCheckpoint = checkpointIndex
-                end
-
-                enableCheckpoint(currentExpectedCheckpoint, isAlt)
-                if isAlt and not mAltRoute then
-                    mAltRoute = true
-                end
             else
                 local missedCheckpoints = checkpointIndex - currentExpectedCheckpoint
                 if missedCheckpoints > 0 then
@@ -2453,6 +2436,11 @@ local function onBeamNGTrigger(data)
                     
                     -- Display message about invalid lap but continuing
                     local message = string.format("Missed a checkpoint\nLap Invalidated.", checkpointIndex)
+                    local checkpointMessage = string.format("Checkpoint %d/%d - Time: %s", 
+                    checkpointsHit,
+                    totalCheckpoints, 
+                    formatTime(in_race_time))
+                    message = message .. "\n" .. checkpointMessage
                     displayMessage(message, 10)
                 end
             end
@@ -2748,9 +2736,6 @@ local function onUpdate(dtReal, dtSim, dtRaw)
     --   dtReal (number): Real delta time.
     --   dtSim (number): Simulated delta time.
     --   dtRaw (number): Raw delta time.
-    --if useGhosts then
-    --    ghostSystem.onUpdate(dtSim)
-    --end
     if mActiveRace and races[mActiveRace].checkpointRoad then
         checkPlayerOnRoad()
         -- --print("checking player on road")
@@ -2786,8 +2771,6 @@ M.displayStagedMessage = displayStagedMessage
 M.payoutDragRace = payoutDragRace
 M.getStartMessage = getStartMessage
 
-M.setGhostsEnabled = function(enabled) useGhosts = enabled end
-M.isGhostsEnabled = function() return useGhosts end
 M.onInit = onInit
 
 return M
