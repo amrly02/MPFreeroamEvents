@@ -663,9 +663,38 @@ local function isLoop()
     return isLoop
 end
 
+local function flipCheckpoints(originalCheckpoints)
+    if not originalCheckpoints or #originalCheckpoints == 0 then
+        return nil
+    end
+    
+    local flipped = {}
+    for i = #originalCheckpoints, 1, -1 do
+        local cp = originalCheckpoints[i]
+        local newDirection = "straight"
+        
+        -- Invert turn directions
+        if cp.direction == "left" then
+            newDirection = "right"
+        elseif cp.direction == "right" then
+            newDirection = "left"
+        end
+        
+        table.insert(flipped, {
+            pos = cp.pos,
+            type = cp.type,
+            index = cp.index,
+            direction = newDirection,
+            width = cp.width
+        })
+    end
+    return flipped
+end
+
 local function getCheckpoints(race)
     MIN_CHECKPOINT_DISTANCE = race.minCheckpointDistance or 90
     if race.checkpointRoad then
+        dump(race)
         -- Clear existing nodes and checkpoints
         roadNodes = nil
         altRoadNodes = nil
@@ -687,6 +716,16 @@ local function getCheckpoints(race)
             checkpoints = processRoadNodes(roadNodes)
             altCheckpoints = nil
         end
+
+        -- Add direction flip logic
+        if race.reverse then
+            print("Flipping checkpoints")
+            checkpoints = flipCheckpoints(checkpoints)
+            if altCheckpoints then
+                altCheckpoints = flipCheckpoints(altCheckpoints)
+            end
+        end
+        
         return checkpoints, altCheckpoints
     end
     return nil, nil
