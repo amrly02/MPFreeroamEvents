@@ -68,6 +68,9 @@ To Add Freeroam Events To A Map:
 - **Merge Logic**:  
   Alt routes require at least 2 shared checkpoints with main route
 
+- **Reverse Logic**:  
+  If the race is reversed, the checkpoints will be flipped. Use this if the checkpoints are in the wrong order.
+
 **Example Configurations:**
 
 ```json
@@ -84,5 +87,13 @@ To Add Freeroam Events To A Map:
     "driftGoal": 50000,  // Optional score target
     "checkpointRoad": "drift_course",
     "type": ["drift"]
+}
+
+"rally": {
+    "bestTime": 70,
+    "reward": 2000,
+    "checkpointRoad": "rally",
+    "reverse": true,
+    "type": ["motorsport"]
 }
 ```
