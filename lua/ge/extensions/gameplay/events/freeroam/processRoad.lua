@@ -101,6 +101,7 @@ local function findApex(nodes, startIndex, endIndex)
         end
     end
     local apexOffset = activeRace.apexOffset or 0
+    apexOffset = activeRace.reverse and -apexOffset or apexOffset
     apexIndex = nodes[apexIndex + apexOffset] and apexIndex + apexOffset or #nodes
     return apexIndex
 end
@@ -694,7 +695,6 @@ end
 local function getCheckpoints(race)
     MIN_CHECKPOINT_DISTANCE = race.minCheckpointDistance or 90
     if race.checkpointRoad then
-        dump(race)
         -- Clear existing nodes and checkpoints
         roadNodes = nil
         altRoadNodes = nil

@@ -438,7 +438,7 @@ local function onBeamNGTrigger(data)
                 end
             end
             checkpointManager.setRace(races[raceName], raceName)
-            activeAssets.displayAssets(data, Assets)
+            Assets:displayAssets(data)
             utils.playCheckpointSound()
             timerActive = false
             lapCount = lapCount + 1
@@ -462,7 +462,7 @@ local function onBeamNGTrigger(data)
             -- Start the race
             utils.saveAndSetTrafficAmount(0)
             checkpointManager.setRace(races[raceName], raceName)
-            activeAssets.displayAssets(data, Assets)
+            Assets:displayAssets(data)
             timerActive = true
             in_race_time = 0
             mActiveRace = raceName
@@ -555,7 +555,7 @@ local function onBeamNGTrigger(data)
                         utils.formatTime(in_race_time))
                 end
                 utils.displayMessage(checkpointMessage, 7)
-                activeAssets.displayAssets(data)
+                Assets:displayAssets(data)
             else
                 local missedCheckpoints = checkpointIndex - currentExpectedCheckpoint
                 if missedCheckpoints > 0 then
