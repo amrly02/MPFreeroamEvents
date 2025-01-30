@@ -474,6 +474,7 @@ local function onBeamNGTrigger(data)
             -- Handle drift races
             if utils.tableContains(races[raceName].type, "drift") then
                 gameplay_drift_general.setContext("inChallenge")
+                gameplay_drift_general.reset()
                 if gameplay_drift_drift then
                     gameplay_drift_drift.setVehId(data.subjectID)
                 end
