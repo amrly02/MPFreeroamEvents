@@ -9,9 +9,10 @@ local dGeneral, dUtils
 local dragData
 local logTag = ""
 local freeroamEvents = require("gameplay/events/freeroamEvents")
+local freeroamUtils = require("gameplay/events/freeroam/utils")
 local hasActivityStarted = false
 local function onExtensionLoaded()
-  log("I", logTag, "dragRace extension loaded")
+  --log("I", logTag, "dragRace extension loaded")
   dGeneral = gameplay_drag_general
   dUtils = gameplay_drag_utils
 
@@ -30,16 +31,6 @@ local function onExtensionLoaded()
   dragData.isStarted = true
 
   hasActivityStarted = dragData.isStarted
-end
-
-local function changeRacerPhase(racer)
-  local index = racer.currentPhase + 1
-  if index > #dragData.phases then
-    racer.isFinished = true
-    return
-  end
-  racer.currentPhase = index
-  log("I", logTag, "This is the new phase: " .. racer.phases[racer.currentPhase].name .. " for vehicle: " .. tostring(racer.vehId))
 end
 
 local function resetDragRace()
@@ -89,15 +80,15 @@ local function onUpdate(dtReal, dtSim, dtRaw)
       if phase.completed and not racer.isFinished then
         log('I', logTag, 'Racer: '.. racer.vehId ..' completed phase: '.. phase.name)
         if phase.name == "stage" then
-          freeroamEvents.displayStagedMessage("drag")
+          freeroamUtils.displayStagedMessage("drag")
         elseif phase.name == "countdown" then
-          freeroamEvents.displayMessage(freeroamEvents.getStartMessage("drag"), 5)
-          freeroamEvents.saveAndSetTrafficAmount(0)
-        else
+          freeroamUtils.displayStartMessage("drag")
+          freeroamUtils.saveAndSetTrafficAmount(0)
+        elseif phase.name == "race" then
           freeroamEvents.payoutDragRace("drag", racer.timers.time_1_4.value, racer.vehSpeed * 2.2369362921)
-          freeroamEvents.restoreTrafficAmount()
+          freeroamUtils.restoreTrafficAmount()
         end
-        changeRacerPhase(racer)
+        dUtils.changeRacerPhase(racer)
       end
 
       if not dUtils.isRacerInsideBoundary(racer) then

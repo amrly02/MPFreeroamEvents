@@ -1,7 +1,7 @@
 {
   "races": {
     "drag": {
-      "bestTime": 11,
+      "bestTime": 10,
       "reward": 1000,
       "checkpoints": 2,
       "label": "Drag Strip",
