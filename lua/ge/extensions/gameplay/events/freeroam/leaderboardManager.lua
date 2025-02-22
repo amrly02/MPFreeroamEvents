@@ -1,6 +1,6 @@
 local M = {}
 
-local leaderboardFile = "career/races_leaderboard.json"
+local leaderboardFile = "career/rls_career/races_leaderboard.json"
 local leaderboard = {}
 
 local level
@@ -11,79 +11,89 @@ local function loadLeaderboard()
     end
     local saveSlot, savePath = career_saveSystem.getCurrentSaveSlot()
     local file = savePath .. '/' .. leaderboardFile
-    local file = io.open(file, "r")
-    if file then
-        local content = file:read("*a")
-        leaderboard = jsonDecode(content) or {}
-        file:close()
-    else
-        leaderboard = {} -- Initialize as empty if file does not exist
-    end
+    leaderboard = jsonReadFile(file)
 end
 
 local function saveLeaderboard(currentSavePath)
-    local file = currentSavePath .. '/' .. leaderboardFile
-    local file = io.open(file, "w")
-    file:write(jsonEncode(leaderboard))
-    file:close()
+    if not leaderboard then
+        leaderboard = {}
+    end
+    career_saveSystem.jsonWriteFileSafe(currentSavePath .. "/" .. leaderboardFile, leaderboard, true)
 end
 
 local function isBestTime(entry)
-    if not leaderboard[level] then
-        leaderboard[level] = {}
-        return true
+    level = getCurrentLevelIdentifier()
+    if not leaderboard then
+        leaderboard = {}
     end
-    local leaderboardEntry = leaderboard[level][entry.raceName]
+    local leaderboardEntry = leaderboard[level] or {}
     if not leaderboardEntry then
         return true
     end
-    local time
-    if entry.isAltRoute then
-        if entry.isHotlap then
-            time = leaderboardEntry.altRoute.hotlapTime
-        else
-            time = leaderboardEntry.altRoute.time
-        end
-    else
-        if entry.isHotlap then
-            time = leaderboardEntry.hotlapTime
-        else
-            time = leaderboardEntry.time
-        end
+
+    leaderboardEntry = leaderboardEntry[tostring(entry.inventoryId)] or {}
+    if not leaderboardEntry then
+        return true
     end
-    if time == nil then return true end
-    return entry.time < time
+
+    leaderboardEntry = leaderboardEntry[entry.raceLabel] or {}
+    if not leaderboardEntry then
+        return true
+    end
+
+    if entry.driftScore and entry.driftScore > 0 then
+        if not leaderboardEntry.driftScore then
+            return true
+        end
+        return entry.driftScore > leaderboardEntry.driftScore
+    end
+
+    if not leaderboardEntry.time then
+        return true
+    end
+    return entry.time < leaderboardEntry.time
 end
 
+
 local function addLeaderboardEntry(entry)
+    level = getCurrentLevelIdentifier()
+
+    if career_career and career_career.isActive() then
+        career_modules_inventory.saveFRETimeToVehicle(entry.raceLabel, entry.inventoryId, entry.time, entry.driftScore)
+    end
+    if not leaderboard then
+        leaderboard = {}
+    end
+    if not leaderboard[level] then 
+        leaderboard[level] = {}
+    end
+    if not leaderboard[level][tostring(entry.inventoryId)] then
+        leaderboard[level][tostring(entry.inventoryId)] = {}
+    end
+    local leaderboardEntry = leaderboard[level][tostring(entry.inventoryId)]
     if isBestTime(entry) then
-        local raceName = entry.raceName
-        leaderboard[level] = leaderboard[level] or {}
-        leaderboard[level][raceName] = leaderboard[level][raceName] or {}
-        if entry.isAltRoute then
-            leaderboard[level][raceName].altRoute = leaderboard[level][raceName].altRoute or {}
-            if entry.isHotlap then
-                leaderboard[level][raceName].altRoute.hotlapSplitTimes = entry.splitTimes
-                leaderboard[level][raceName].altRoute.hotlapTime = entry.time
-            else
-                leaderboard[level][raceName].altRoute.splitTimes = entry.splitTimes
-                leaderboard[level][raceName].altRoute.time = entry.time
-            end
-        else
-            if entry.isHotlap then
-                leaderboard[level][raceName].hotlapSplitTimes = entry.splitTimes
-                leaderboard[level][raceName].hotlapTime = entry.time
-            else
-                leaderboard[level][raceName].splitTimes = entry.splitTimes
-                leaderboard[level][raceName].time = entry.time
-            end
-        end
+        local raceLabel = entry.raceLabel
+        leaderboardEntry[raceLabel] = leaderboardEntry[raceLabel] or {}
+        leaderboardEntry[raceLabel].time = entry.time
+        leaderboardEntry[raceLabel].splitTimes = entry.splitTimes
+        leaderboardEntry[raceLabel].driftScore = entry.driftScore
         return true
     end
     return false
 end
 
-local function onInit()
+local function clearLeaderboardForVehicle(inventoryId)
+    level = getCurrentLevelIdentifier()
+    if not leaderboard then
+        leaderboard = {}
+    end
+    if not leaderboard[level] or not leaderboard[level][tostring(inventoryId)] then
+        return
+    end
+    leaderboard[level][tostring(inventoryId)] = nil
+end
+
+local function onExtensionLoaded()
     print("Initializing Leaderboard Manager")
     level = getCurrentLevelIdentifier()
     if level then
@@ -102,29 +112,35 @@ local function onSaveCurrentSaveSlot(currentSavePath)
     saveLeaderboard(currentSavePath)
 end
 
-local function getTimes(raceName, checkpointsHit, altRoute)
-    local leaderboardEntry = leaderboard[level][raceName]
-    if not leaderboardEntry or (altRoute and not leaderboardEntry.altRoute) then
-        return nil
+local function getLeaderboardEntry(inventoryId, raceLabel)
+    level = getCurrentLevelIdentifier()
+    if not leaderboard then
+        leaderboard = {}
     end
-    return altRoute and leaderboardEntry.altRoute.splitTimes[checkpointsHit] or leaderboardEntry.splitTimes[checkpointsHit]
+    if not leaderboard[level] or not leaderboard[level][tostring(inventoryId)] then
+        return {}
+    end
+    return leaderboard[level][tostring(inventoryId)][raceLabel]
 end
 
-local function getLeaderboardEntry(raceName)
-    if not leaderboard[level] then
-        return nil
+local function onCareerActive(active)
+    if active then
+        loadLeaderboard()
+    else
+        leaderboard = {}
     end
-    return leaderboard[level][raceName]
 end
 
-M.onInit = onInit
+M.onVehicleRemoved = clearLeaderboardForVehicle
+M.onCareerActive = onCareerActive
+
+M.onExtensionLoaded = onExtensionLoaded
 M.onWorldReadyState = onWorldReadyState
 
 M.onSaveCurrentSaveSlot = onSaveCurrentSaveSlot
 M.addLeaderboardEntry = addLeaderboardEntry
 
 M.isBestTime = isBestTime
-M.getTimes = getTimes
 M.getLeaderboardEntry = getLeaderboardEntry
 
 return M
