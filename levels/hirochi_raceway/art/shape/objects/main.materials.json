@@ -1,0 +1,31 @@
+{
+  "curbramp": {
+    "name": "curbramp",
+    "mapTo": "curbramp",
+    "class": "Material",
+    "persistentId": "27080d25-800d-4803-ace9-ee5d5ec084b8",
+    "Stages": [
+      {
+        "ambientOcclusionMap": "levels/west_coast_usa/art/shapes/objects/curbramp_ao.data.png",
+        "baseColorMap": "levels/west_coast_usa/art/shapes/objects/curbramp_b.color.png",
+        "metallicFactor": 1,
+        "metallicMap": "levels/west_coast_usa/art/shapes/objects/curbramp_m.data.png",
+        "normalMap": "levels/west_coast_usa/art/shapes/objects/curbramp_nm.normal.png",
+        "roughnessMap": "levels/west_coast_usa/art/shapes/objects/curbramp_r.data.png"
+      },
+      {
+        "metallicFactor": null
+      },
+      {
+        "metallicFactor": null
+      },
+      {
+        "metallicFactor": null
+      }
+    ],
+    "dynamicCubemap": true,
+    "materialTag0": "beamng",
+    "materialTag1": "vehicle",
+    "version": 1.5
+  }
+}
