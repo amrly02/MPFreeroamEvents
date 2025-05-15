@@ -869,14 +869,14 @@ local function onEditorInitialized()
 end
 
 local internal_onEditorUpdate = 5
-local lastOsTime = 0
+local lastOsTime = os.time()
 
 -- Add onEditorUpdate function for our trigger placement
 function M.onEditorUpdate()
   if pendingTriggerType and pendingTriggerRace then
     triggerPlacementUpdate()
   end
-  if lastOsTime - os.time() > internal_onEditorUpdate then
+  if os.time() - lastOsTime > internal_onEditorUpdate then
     lastOsTime = os.time()
     findDecalRoads()
 
