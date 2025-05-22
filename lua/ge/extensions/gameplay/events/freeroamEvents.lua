@@ -379,6 +379,7 @@ local function exitRace()
         checkpointManager.removeCheckpoints()
         utils.displayMessage("You exited the race zone, Race cancelled", 3)
         utils.restoreTrafficAmount()
+        pits.clearSpeedLimit()
         newBestSession = false
         if gameplay_drift_general.getContext() == "inChallenge" then
             gameplay_drift_general.setContext("inFreeRoam")
@@ -686,7 +687,6 @@ local function onBeamNGTrigger(data)
             end
         elseif event == "exit" and mActiveRace == raceName then
             -- Handle pit exit
-            print("Pit exit")
             pits.toggleSpeedLimit()
             local obj = be:getPlayerVehicle(0)
             if obj then

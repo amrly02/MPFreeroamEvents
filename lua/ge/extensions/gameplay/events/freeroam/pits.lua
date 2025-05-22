@@ -37,7 +37,7 @@ local function applySpeedLimit(dt)
   if forcingStop then
     -- Apply full brakes until vehicle is almost stopped
     veh:queueLuaCommand("input.event('throttle', 0, 1, nil, nil, nil, 'code')")
-    veh:queueLuaCommand("input.event('brake', 1, 1, nil, nil, nil, 'code')")
+    veh:queueLuaCommand("input.event('brake', 0.85, 1, nil, nil, nil, 'code')")
     
     -- Check if we've reached near-stop condition
     if vel < 1.0 then
@@ -50,8 +50,12 @@ local function applySpeedLimit(dt)
         recovery.startRecovering()
         recovery.stopRecovering()
       ]])
-      veh:queueLuaCommand("input.event('brake', 0.5, 1)")
-      veh:queueLuaCommand("input.event('throttle', 0.5, 1)")
+      veh:queueLuaCommand([[
+        input.event('brake', 0.5, 1, nil, nil, nil, 'code')
+        input.event('throttle', 0.5, 1, nil, nil, nil, 'code')
+        input.event('brake', 0, 1, nil, nil, nil, 'code')
+        input.event('throttle', 0, 1, nil, nil, nil, 'code')
+      ]])
     end
     
     return
@@ -191,11 +195,22 @@ local function toggleSpeedLimit()
     log('I', 'pits', 'Speed limit enabled: ' .. speedKmh .. ' km/h (' .. 
         string.format("%.2f", activeSpeedLimit) .. ' m/s)')
   else
-    be:getPlayerVehicle(0):queueLuaCommand("input.event('throttle', 1, 1)")
+    be:getPlayerVehicle(0):queueLuaCommand([[
+      input.event('throttle', 1, 1)
+      input.event('brake', 0, 1)
+    ]])
     log('I', 'pits', 'Speed limit disabled')
     forcingStop = false
   end
   return limitActive
+end
+
+local function clearSpeedLimit()
+  activeSpeedLimit = nil
+  limitActive = false
+  applyingLimit = false
+  forcingStop = false
+  log('I', 'pits', 'Speed limit disabled')
 end
 
 -- Update function to be called in the vehicle update loop
@@ -211,5 +226,5 @@ M.setSpeedLimit = setSpeedLimit
 M.toggleSpeedLimit = toggleSpeedLimit
 M.stopThenLimit = stopThenLimit
 M.receiveThrottleInput = receiveThrottleInput
-
+M.clearSpeedLimit = clearSpeedLimit
 return M
