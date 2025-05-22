@@ -3,7 +3,6 @@
 -- TODO:
 -- Reward Calculator 
 -- Alt Route Handling
--- Custom Checkpoint Editor (ProcessRoad will need to be updated to support this)
 
 local M = {}
 local logTag = 'editor_freeroamEventEditor' -- this is used for logging as a tag
@@ -23,6 +22,11 @@ local pendingTriggerRace = nil
 local pendingTriggerName = nil
 local showTriggerPlacementHelp = false
 local showingRaceCheckpoints = false
+local showingCheckpointsEditor = false
+local checkpoints = {}
+local altCheckpoints = {}
+local roadNodes = {}
+local altRoadNodes = {}
 
 local lookingForRoad = false
 
@@ -106,8 +110,13 @@ local function showRaceCheckpoints()
   if not currentRaceName then return end
   dump(races[currentRaceName])
 
-  local checkpoints, altCheckpoints = processRoad.getCheckpoints(races[currentRaceName])
+  checkpoints, altCheckpoints = processRoad.getCheckpoints(races[currentRaceName])
   checkpointManager.createCheckpoints(checkpoints, altCheckpoints)
+
+  roadNodes = processRoad.getRoadNodesFromRace(races[currentRaceName])
+  if races[currentRaceName].altRoute then
+    altRoadNodes = processRoad.getRoadNodesFromRace(races[currentRaceName].altRoute)
+  end
 end
 
 local function removeRaceCheckpoints()
@@ -364,6 +373,54 @@ local function getMissingComponents(raceName, race)
   end
   
   return missing
+end
+
+local function showCheckpointsEditor(race)
+  if not showingCheckpointsEditor then return end
+  if not race.checkpointIndexs then 
+    race.checkpointIndexs = {}
+    for i, checkpoint in ipairs(checkpoints) do
+      race.checkpointIndexs[i] = checkpoint.index
+    end
+  end
+
+  im.Text("Editing Checkpoints")
+  if im.CollapsingHeader1("Checkpoints") then
+    for i, checkpoint in ipairs(checkpoints) do
+      -- Use a unique ID for each checkpoint row
+      im.PushID1("checkpoint_" .. tostring(i))
+      
+      im.Text("Checkpoint " .. tostring(i))
+      im.SameLine()
+
+      if im.Button("X##remove"..i, im.ImVec2(24, 0)) then
+        table.remove(race.checkpointIndexs, i)
+        removeRaceCheckpoints()
+        showRaceCheckpoints()
+        break
+      end
+      im.SameLine()
+      
+      -- Set the width of the input field to half the available width
+      im.SetNextItemWidth(im.GetContentRegionAvailWidth() / 2)
+      local index = im.IntPtr(race.checkpointIndexs[i])
+      if im.InputInt("##Index", index, 1, 10) then
+        race.checkpointIndexs[i] = index[0]
+        removeRaceCheckpoints()
+        showRaceCheckpoints()
+      end
+      im.SameLine()
+
+      if im.Button("Add##add"..i, im.ImVec2(60, 0)) then
+        table.insert(race.checkpointIndexs, i + 1, race.checkpointIndexs[i] + 1)
+        removeRaceCheckpoints()
+        showRaceCheckpoints()
+        break
+      end
+      
+      im.PopID()
+    end
+  end
 end
 
 -- Main editor GUI function
@@ -673,51 +730,83 @@ local function onEditorGui()
         end
         local filterText = roadFilterText:lower()
 
-        if im.BeginCombo("Select Road##main", race.checkpointRoad or "Choose a road") then
-          if race.checkpointRoad and not tableContains(levelDecalRoads, race.checkpointRoad) then
-            race.checkpointRoad = nil
-          end
+        -- Initialize checkpoint roads as a table if needed
+        if race.checkpointRoad and type(race.checkpointRoad) ~= "table" then
+          race.checkpointRoad = {race.checkpointRoad}
+        elseif not race.checkpointRoad then
+          race.checkpointRoad = {}
+        end
+        
+        -- Display all road selections
+        for i, roadName in ipairs(race.checkpointRoad) do
+          local comboLabel = "Select Road #" .. i
+          local currentRoad = roadName or "Choose a road"
           
-          lookingForRoad = true
-          local foundAny = false
-          
-          -- First show the current selection if it exists
-          if race.checkpointRoad and race.checkpointRoad ~= "" then
-            if filterText == "" or string.find(race.checkpointRoad:lower(), filterText) then
-              if im.Selectable1(race.checkpointRoad .. " (current)", true) then
-                -- Keep the current selection
-              end
-              im.Separator()
-              foundAny = true
-            end
-          end
-          
-          -- Then show filtered options
-          for _, roadName in ipairs(levelDecalRoads) do
-            if roadName == "" then goto continue end
-            
-            -- Apply filter
-            if filterText ~= "" and not string.find(roadName:lower(), filterText) then
-              goto continue
-            end
-            
-            foundAny = true
-            if im.Selectable1(roadName, roadName == race.checkpointRoad) then
-              race.checkpointRoad = roadName
+          -- Display a remove button for roads after the first one
+          if i > 1 then
+            if im.Button("X##remove"..i, im.ImVec2(24, 0)) then
+              table.remove(race.checkpointRoad, i)
               changed = true
+              break -- Break to avoid iterating over modified table
             end
-            ::continue::
+            im.SameLine()
           end
           
-          if not foundAny then
-            im.Text("No roads match your filter")
+          if im.BeginCombo(comboLabel, currentRoad) then
+            -- Don't check and invalidate the road here - we do that in onEditorUpdate
+            -- if roadName and not tableContains(levelDecalRoads, roadName) then
+            --   -- Road doesn't exist anymore, mark for update
+            --   changed = true
+            -- end
+            
+            lookingForRoad = true
+            local foundAny = false
+            
+            -- First show the current selection if it exists
+            if roadName and roadName ~= "" then
+              if filterText == "" or string.find(roadName:lower(), filterText) then
+                if im.Selectable1(roadName .. " (current)", true) then
+                  -- Keep the current selection
+                end
+                im.Separator()
+                foundAny = true
+              end
+            end
+            
+            -- Then show filtered options
+            for _, availableRoad in ipairs(levelDecalRoads) do
+              if availableRoad == "" then goto continue end
+              
+              -- Apply filter
+              if filterText ~= "" and not string.find(availableRoad:lower(), filterText) then
+                goto continue
+              end
+              
+              foundAny = true
+              if im.Selectable1(availableRoad, availableRoad == roadName) then
+                race.checkpointRoad[i] = availableRoad
+                changed = true
+              end
+              ::continue::
+            end
+            
+            if not foundAny then
+              im.Text("No roads match your filter")
+            end
+            
+            im.EndCombo()
+          else
+            lookingForRoad = false
           end
-          
-          im.EndCombo()
-        else
-          lookingForRoad = false
+        end
+        
+        -- Add the plus button to add more roads
+        if im.Button("+ Add Road", im.ImVec2(im.GetContentRegionAvailWidth(), 0)) then
+          table.insert(race.checkpointRoad, "")
+          changed = true
         end
 
+        im.Spacing()
         if im.Button("Show Checkpoints", im.ImVec2(im.GetContentRegionAvailWidth()/2, 0)) then
           showingRaceCheckpoints = true
           showRaceCheckpoints()
@@ -726,7 +815,23 @@ local function onEditorGui()
         if im.Button("Hide Checkpoints", im.ImVec2(im.GetContentRegionAvailWidth(), 0)) then
           showingRaceCheckpoints = false
           removeRaceCheckpoints()
+          roadNodes = nil
+          altRoadNodes = nil
         end
+
+        if showingRaceCheckpoints then
+          local buttonText = not showingCheckpointsEditor and "Manual Edit Checkpoints" or "Use Auto Checkpoints"
+          if im.Button(buttonText, im.ImVec2(im.GetContentRegionAvailWidth(), 0)) then
+            if not showingCheckpointsEditor then
+              showingCheckpointsEditor = true
+            else
+              race.checkpointIndexs = nil
+              showingCheckpointsEditor = false
+            end
+          end
+          showCheckpointsEditor(race)
+        end
+
       end
       
       -- SECTION: Trigger Management
@@ -881,14 +986,32 @@ function M.onEditorUpdate()
     findDecalRoads()
 
     for raceName, race in pairs(races) do
-      if race.checkpointRoad and not tableContains(levelDecalRoads, race.checkpointRoad) then
-        race.checkpointRoad = nil
+      if race.checkpointRoad then
+        -- Handle both string and table cases
+        if type(race.checkpointRoad) == "string" then
+          -- Legacy format (single road as string)
+          if race.checkpointRoad ~= "" and not tableContains(levelDecalRoads, race.checkpointRoad) then
+            race.checkpointRoad = nil
+          end
+        elseif type(race.checkpointRoad) == "table" then
+          -- New format (multiple roads as table)
+          local validRoads = {}
+          for _, roadName in ipairs(race.checkpointRoad) do
+            if roadName ~= "" and tableContains(levelDecalRoads, roadName) then
+              table.insert(validRoads, roadName)
+            end
+          end
+          
+          -- Only update if we need to remove some roads
+          if #validRoads ~= #race.checkpointRoad then
+            race.checkpointRoad = validRoads  -- Always keep as table, even if empty
+          end
+        end
       end
     end
   end
 end
 
--- Module exports (keep onEditorMouseDown since we might need it later)
 M.onEditorGui = onEditorGui
 M.onEditorInitialized = onEditorInitialized
 M.onWindowMenuItem = onWindowMenuItem
