@@ -50,6 +50,8 @@ local function applySpeedLimit(dt)
         recovery.startRecovering()
         recovery.stopRecovering()
       ]])
+      veh:queueLuaCommand("input.event('brake', 0.5, 1)")
+      veh:queueLuaCommand("input.event('throttle', 0.5, 1)")
     end
     
     return
@@ -95,7 +97,7 @@ local function applySpeedLimit(dt)
       
       if speedRatio < 0.05 then
         -- Within 5% of the limit, be very conservative
-        throttleAmount = math.min(lastThrottleState, 0.3)
+        throttleAmount = math.min(lastThrottleState, 0.20)
       elseif speedRatio < 0.15 then
         -- Within 15% of the limit, be somewhat conservative
         throttleAmount = math.min(lastThrottleState, lastThrottleState * proximityFactor + 0.1 * underSpeed)
@@ -108,7 +110,7 @@ local function applySpeedLimit(dt)
       veh:queueLuaCommand("input.event('throttle', " .. throttleAmount .. ", 1, nil, nil, nil, 'code')")
       
       -- Make sure we're not braking
-      veh:queueLuaCommand("input.event('brake', 0, 1, nil, nil, nil, 'code')")
+      veh:queueLuaCommand("input.event('brake', 0, 1)")
       
       applyingLimit = true
     else
@@ -189,7 +191,7 @@ local function toggleSpeedLimit()
     log('I', 'pits', 'Speed limit enabled: ' .. speedKmh .. ' km/h (' .. 
         string.format("%.2f", activeSpeedLimit) .. ' m/s)')
   else
-    be:setPlayerVehicle(0):queueLuaCommand("input.event('throttle', " .. lastThrottleState .. ", 1, nil, nil, nil, 'code')")
+    be:getPlayerVehicle(0):queueLuaCommand("input.event('throttle', 1, 1)")
     log('I', 'pits', 'Speed limit disabled')
     forcingStop = false
   end
