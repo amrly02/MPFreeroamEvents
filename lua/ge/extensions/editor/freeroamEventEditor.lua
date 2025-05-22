@@ -1,7 +1,6 @@
 -- World Editor Freeroam Event Creator
 
 -- TODO:
--- Reward Calculator 
 -- Alt Route Handling
 
 local M = {}
@@ -11,6 +10,7 @@ local toolWindowName = "editor_freeroamEventEditor_window"
 
 local processRoad = require('gameplay/events/freeroam/processRoad')
 local checkpointManager = require('gameplay/events/freeroam/checkpointManager')
+local utils = require('gameplay/events/freeroam/utils')
 local races = {}
 local currentRaceName = nil
 local modified = false
@@ -27,6 +27,13 @@ local checkpoints = {}
 local altCheckpoints = {}
 local roadNodes = {}
 local altRoadNodes = {}
+
+local bestTimeSession = im.BoolPtr(false)
+local inRange = im.BoolPtr(false)
+local realTime = im.FloatPtr(0)
+local driftScore = im.IntPtr(1000)
+local lapCount = im.IntPtr(1)
+local hardcore = im.BoolPtr(false)
 
 local lookingForRoad = false
 
@@ -607,15 +614,68 @@ local function onEditorGui()
           race.bestTime = bestTime[0]
           changed = true
         end
+
+        local isDriftGoal = im.BoolPtr(race.driftGoal ~= nil)
+        if im.Checkbox("Drift Event", isDriftGoal) then
+          if isDriftGoal[0] then
+            race.driftGoal = 1.0
+          else
+            race.driftGoal = nil
+          end
+          changed = true
+        end
         
+        if isDriftGoal[0] then
+          local driftGoal = im.IntPtr(race.driftGoal or 1000)
+          if im.InputInt("Drift Goal", driftGoal, 100, 10000) then
+            race.driftGoal = driftGoal[0]
+            changed = true
+          end
+        end
+      end
+
+      if im.CollapsingHeader1("Reward") then
         -- Reward
         local reward = im.IntPtr(race.reward or 1000)
         if im.InputInt("Reward ($)", reward, 100, 1000) then
           race.reward = reward[0]
           changed = true
         end
+
+        im.Text("Reward Calculation:")
+
+        im.InputFloat("Time (seconds)", realTime, 1, 5, "%.1f")
+
+        local reward
+        if race.driftGoal then
+          im.InputInt("Drift Score", driftScore, 100, 10000)
+          reward = utils.driftReward(race, realTime[0], driftScore[0])
+        else
+          reward = utils.raceReward(race.bestTime, race.reward, realTime[0])
+        end
+
+        im.InputInt("Lap Count", lapCount, 1, 100)
+
+        reward = reward * utils.hotlapMultiplier(lapCount[0])
+        
+        im.Checkbox("Best Time Session", bestTimeSession)
+        im.Checkbox("In Range", inRange)
+        im.Checkbox("Hardcore", hardcore)
+
+        if bestTimeSession[0] then
+          reward = reward * 1.2
+        end
+
+        if inRange[0] then
+          reward = reward * 1.05
+        end
+
+        if hardcore[0] then
+          reward = reward * 0.5
+        end
+
+        im.Text(string.format("Calculated Reward: %.0f", reward))
       end
-      
       -- SECTION: Event Options
       if im.CollapsingHeader1("Event Options") then
         -- Apex Offset
@@ -1085,9 +1145,21 @@ function M.onEditorUpdate()
   end
 end
 
+local function onExtensionLoaded()
+  loadRaceData()
+end
+
+local function onWorldReadyState(state)
+  if state == 2 then
+    loadRaceData()
+    utils.onExtensionLoaded()
+  end
+end
+
 M.onEditorGui = onEditorGui
 M.onEditorInitialized = onEditorInitialized
 M.onWindowMenuItem = onWindowMenuItem
 M.onActivate = onActivate
+M.onExtensionLoaded = onExtensionLoaded
 
 return M 

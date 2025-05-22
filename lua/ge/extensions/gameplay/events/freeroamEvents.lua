@@ -111,7 +111,7 @@ local function payoutRace()
     local driftScore = 0
     if race.driftGoal then
         driftScore = getDriftScore()
-        reward = utils.driftReward(mActiveRace, time, driftScore)
+        reward = utils.driftReward(races[mActiveRace], time, driftScore)
     else
         reward = utils.raceReward(time, reward, in_race_time)
     end
@@ -172,7 +172,7 @@ local function payoutRace()
         lapCount = invalidLap and 1 or lapCount
         if race.hotlap then
             -- Hotlap Multiplier
-            local hotlapMultiplier = (10 / (1 + math.exp(-0.07*(lapCount - 17)))) - 1.35
+            local hotlapMultiplier = utils.hotlapMultiplier(lapCount)
             reward = reward * hotlapMultiplier
             hotlapMessage = string.format("\nHotlap Multiplier: %.2f", hotlapMultiplier)
         end

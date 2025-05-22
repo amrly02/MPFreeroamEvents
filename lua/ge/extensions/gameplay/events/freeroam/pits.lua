@@ -46,10 +46,12 @@ local function applySpeedLimit(dt)
       applyingLimit = false
       log('I', 'pits', 'Vehicle stopped and repaired, now applying regular speed limit of ' .. 
           math.floor(activeSpeedLimit * 3.6) .. ' km/h')
-      veh:queueLuaCommand([[
-        recovery.startRecovering()
-        recovery.stopRecovering()
-      ]])
+      if not career_career then
+        veh:queueLuaCommand([[
+          recovery.startRecovering()
+          recovery.stopRecovering()
+        ]])
+      end
       veh:queueLuaCommand([[
         input.event('brake', 0.5, 1, nil, nil, nil, 'code')
         input.event('throttle', 0.5, 1, nil, nil, nil, 'code')
