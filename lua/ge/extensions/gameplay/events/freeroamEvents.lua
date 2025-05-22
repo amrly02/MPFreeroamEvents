@@ -10,7 +10,7 @@ local leaderboardManager = require('gameplay/events/freeroam/leaderboardManager'
 local activeAssets = require('gameplay/events/freeroam/activeAssets')
 local checkpointManager = require('gameplay/events/freeroam/checkpointManager')
 local utils = require('gameplay/events/freeroam/utils')
-
+local pits = require('gameplay/events/freeroam/pits')
 local Assets = activeAssets.ActiveAssets.new()
 
 local timerActive = false
@@ -672,6 +672,27 @@ local function onBeamNGTrigger(data)
                 career_modules_pauseTime.enablePauseCounter()
             end
         end
+    elseif triggerType == "pits" then
+        if event == "enter" and mActiveRace == raceName then
+            -- Handle pit entry
+            local obj = be:getPlayerVehicle(0)
+            if obj then
+                obj:queueLuaCommand("obj:setGhostEnabled(true)")
+            end
+            if races[raceName].pitSpeedLimit then
+                pits.stopThenLimit(races[raceName].pitSpeedLimit, races[raceName].pitSpeedLimitUnit)
+            else
+                pits.stopThenLimit(37, "MPH")
+            end
+        elseif event == "exit" and mActiveRace == raceName then
+            -- Handle pit exit
+            print("Pit exit")
+            pits.toggleSpeedLimit()
+            local obj = be:getPlayerVehicle(0)
+            if obj then
+                obj:queueLuaCommand("obj:setGhostEnabled(false)")
+            end
+        end    
     else
         -- print("Unknown trigger type: " .. triggerType)
     end

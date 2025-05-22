@@ -33,6 +33,12 @@ M.onInit = function()
     extensions.load("gameplay_events_freeroam_utils")
     setExtensionUnloadMode("gameplay_events_freeroam_utils", "manual")
 
+    if extensions.isExtensionLoaded("gameplay_events_freeroam_pits") then
+        extensions.unload("gameplay_events_freeroam_pits")
+    end
+    extensions.load("gameplay_events_freeroam_pits")
+    setExtensionUnloadMode("gameplay_events_freeroam_pits", "manual")
+
     if extensions.isExtensionLoaded("gameplay_events_freeroamEvents") then
         extensions.unload("gameplay_events_freeroamEvents")
     end

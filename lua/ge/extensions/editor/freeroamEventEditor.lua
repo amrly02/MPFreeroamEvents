@@ -220,6 +220,8 @@ local function triggerPlacementUpdate()
       prefix = "fre_staging_"
     elseif pendingTriggerType == "finish" then
       prefix = "fre_finish_"
+    elseif pendingTriggerType == "pit" then
+      prefix = "fre_pits_"
     end
     
     local triggerName = prefix .. pendingTriggerRace
@@ -285,6 +287,8 @@ local function createOrSelectTrigger(triggerType, raceName)
     prefix = "fre_staging_"
   elseif triggerType == "finish" then
     prefix = "fre_finish_"
+  elseif triggerType == "pit" then
+    prefix = "fre_pits_"
   end
   
   local triggerName = prefix .. raceName
@@ -341,12 +345,18 @@ local function isRaceComplete(raceName, race)
   local hasStartTrigger = scenetree.findObject("fre_start_" .. raceName) ~= nil
   local hasStagingTrigger = scenetree.findObject("fre_staging_" .. raceName) ~= nil
   
+  -- Pit trigger is only required if pits are enabled
+  local hasPitTrigger = true
+  if race.hasPits then
+    hasPitTrigger = scenetree.findObject("fre_pits_" .. raceName) ~= nil
+  end
+  
   -- Point-to-point specific requirements
   if not race.hotlap then
     local hasFinishTrigger = scenetree.findObject("fre_finish_" .. raceName) ~= nil
-    return hasCheckpointRoad and hasStartTrigger and hasStagingTrigger and hasFinishTrigger
+    return hasCheckpointRoad and hasStartTrigger and hasStagingTrigger and hasFinishTrigger and hasPitTrigger
   else
-    return hasCheckpointRoad and hasStartTrigger and hasStagingTrigger
+    return hasCheckpointRoad and hasStartTrigger and hasStagingTrigger and hasPitTrigger
   end
 end
 
@@ -370,6 +380,10 @@ local function getMissingComponents(raceName, race)
     if not scenetree.findObject("fre_finish_" .. raceName) then
       table.insert(missing, "Finish trigger")
     end
+  end
+  
+  if race.hasPits and not scenetree.findObject("fre_pits_" .. raceName) then
+    table.insert(missing, "Pit trigger")
   end
   
   return missing
@@ -833,14 +847,13 @@ local function onEditorGui()
         end
 
       end
+
+      local function triggerExists(prefix, raceName)
+        return scenetree.findObject(prefix .. raceName) ~= nil
+      end
       
       -- SECTION: Trigger Management
       if im.CollapsingHeader1("Trigger Management") then
-        -- Function to check if trigger exists
-        local function triggerExists(prefix, raceName)
-          return scenetree.findObject(prefix .. raceName) ~= nil
-        end
-
         -- Start trigger
         local startExists = triggerExists("fre_start_", currentRaceName)
         local buttonText = startExists and "Select Start Trigger" or "Create Start Trigger"
@@ -906,6 +919,66 @@ local function onEditorGui()
         -- Show help text if placing trigger
         if showTriggerPlacementHelp then
           im.TextColored(im.ImVec4(1, 1, 0, 1), "Click on the map to place the trigger")
+        end
+      end
+      
+      -- SECTION: Pits Management
+      if im.CollapsingHeader1("Pits Management") then
+        -- Enable/disable pits toggle
+        local hasPits = im.BoolPtr(race.hasPits or false)
+        if im.Checkbox("Enable Pit Lane Speed Limit", hasPits) then
+          race.hasPits = hasPits[0]
+          changed = true
+        end
+        
+        -- Only show pit settings if enabled
+        if race.hasPits then
+          -- Speed limit value
+          local pitSpeedLimit = im.IntPtr(race.pitSpeedLimit or 60)
+          if im.InputInt("Pit Speed Limit", pitSpeedLimit, 5, 10) then
+            race.pitSpeedLimit = math.max(5, pitSpeedLimit[0]) -- Ensure minimum value
+            changed = true
+          end
+          
+          -- Speed limit unit selection using BeginCombo
+          local unitOptions = {"KPH", "MPH"}
+          local currentUnit = race.pitSpeedUnit or "KPH"
+          
+          if im.BeginCombo("Speed Unit", currentUnit) then
+            for _, unit in ipairs(unitOptions) do
+              local isSelected = (unit == currentUnit)
+              if im.Selectable1(unit, isSelected) then
+                race.pitSpeedUnit = unit
+                changed = true
+              end
+              
+              -- Set initial focus when opening the combo
+              if isSelected then
+                im.SetItemDefaultFocus()
+              end
+            end
+            im.EndCombo()
+          end
+          
+          -- Pit trigger
+          local pitExists = triggerExists("fre_pits_", currentRaceName)
+          local buttonText = pitExists and "Select Pit Trigger" or "Create Pit Trigger"
+          if pendingTriggerType == "pit" and pendingTriggerRace == currentRaceName then
+            buttonText = "Cancel Pit Trigger Placement"
+          end
+          
+          im.PushStyleColor2(im.Col_Text, pitExists and im.ImVec4(0.2, 0.8, 0.2, 1.0) or im.ImVec4(0.8, 0.2, 0.2, 1.0))
+          if im.Button(buttonText, im.ImVec2(im.GetContentRegionAvailWidth(), 0)) then
+            if pendingTriggerType == "pit" and pendingTriggerRace == currentRaceName then
+              -- Cancel placement
+              pendingTriggerType = nil
+              pendingTriggerRace = nil
+              showTriggerPlacementHelp = false
+            else
+              createOrSelectTrigger("pit", currentRaceName)
+            end
+          end
+          im.PopStyleColor()
         end
       end
       
