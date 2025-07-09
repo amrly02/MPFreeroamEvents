@@ -172,9 +172,8 @@ local function payoutRace()
         lapCount = invalidLap and 1 or lapCount
         if race.hotlap then
             -- Hotlap Multiplier
-            local hotlapMultiplier = utils.hotlapMultiplier(lapCount)
-            reward = reward * hotlapMultiplier
-            hotlapMessage = string.format("\nHotlap Multiplier: %.2f", hotlapMultiplier)
+            reward = reward * utils.hotlapMultiplier(lapCount)
+            hotlapMessage = string.format("\nHotlap Multiplier: %.2f", utils.hotlapMultiplier(lapCount))
         end
 
         if newBest and not newBestSession then
