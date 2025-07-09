@@ -703,8 +703,29 @@ local function onWorldReadyState(state)
     end
 end
 
-local function onInit()
+local function loadExtensions()
+    print("Initializing Freeroam Events Modules")
+
+    local freeroamPath = "/lua/ge/extensions/gameplay/events/freeroam/"
+    local files = FS:findFiles(freeroamPath, "*.lua", -1, true, false)
+    
+    if files then
+        for _, filePath in ipairs(files) do
+            local filename = string.match(filePath, "([^/]+)%.lua$")
+
+            if filename then
+                local extensionName = "gameplay_events_freeroam_" .. filename
+                setExtensionUnloadMode(extensionName, "manual")
+                print("Loaded extension: " .. extensionName)
+            end
+        end
+    end
+    loadManualUnloadExtensions()
+end
+
+local function onExtensionLoaded()
     print("Initializing Freeroam Events Main")
+    loadExtensions()
     if getCurrentLevelIdentifier() then
         races = utils.loadRaceData()
         if races ~= {} then
@@ -789,6 +810,6 @@ M.payoutDragRace = payoutDragRace
 M.onWorldReadyState = onWorldReadyState
 M.getRace = function(raceName) return races[raceName] end
 
-M.onInit = onInit
+M.onExtensionLoaded = onExtensionLoaded
 
 return M
