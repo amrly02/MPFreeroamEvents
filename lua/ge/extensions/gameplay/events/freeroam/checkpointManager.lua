@@ -280,11 +280,11 @@ local function setRace(inputRace, inputRaceName)
     raceName = inputRaceName
 end
 
-local function onInit()
+local function onExtensionLoaded()
     print("Initializing Checkpoint Manager")
 end
 
-M.onInit = onInit
+M.onExtensionLoaded = onExtensionLoaded
 M.createCheckpoints = createCheckpoints
 M.enableCheckpoint = enableCheckpoint
 M.removeCheckpoints = removeCheckpoints
