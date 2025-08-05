@@ -34,6 +34,7 @@ local realTime = im.FloatPtr(0)
 local driftScore = im.IntPtr(1000)
 local lapCount = im.IntPtr(1)
 local hardcore = im.BoolPtr(false)
+local damagePercentage = im.FloatPtr(0.0)
 
 local lookingForRoad = false
 
@@ -46,7 +47,8 @@ local raceTemplate = {
   reward = 1000,
   label = "New Event",
   checkpointRoad = nil,
-  type = {"motorsport"}
+  type = {"motorsport"},
+  timeout = 10
 }
 
 -- Function to create a new race
@@ -632,6 +634,42 @@ local function onEditorGui()
             changed = true
           end
         end
+        
+        -- Damage Factor
+        local hasDamageFactor = im.BoolPtr(race.damageFactor ~= nil)
+        if im.Checkbox("Enable Damage Factor", hasDamageFactor) then
+          if hasDamageFactor[0] then
+            race.damageFactor = 0.5
+          else
+            race.damageFactor = nil
+          end
+          changed = true
+        end
+        
+        if hasDamageFactor[0] then
+          local damageFactor = im.FloatPtr(race.damageFactor or 0.5)
+          if im.SliderFloat("Damage Factor", damageFactor, 0.0, 1.0, "%.2f") then
+            race.damageFactor = damageFactor[0]
+            changed = true
+          end
+          im.SameLine()
+          if im.Button("?##damageFactor") then
+            im.OpenPopup("Damage Factor Help")
+          end
+          if im.BeginPopupModal("Damage Factor Help", nil, im.WindowFlags_AlwaysAutoResize) then
+            im.Text("Damage Factor determines how damage affects scoring:")
+            im.Separator()
+            im.BulletText("0.0 = Time only (traditional time trial)")
+            im.BulletText("0.5 = 50% time, 50% damage (balanced)")
+            im.BulletText("1.0 = Damage only (no damage = full reward)")
+            im.Separator()
+            im.Text("Higher values prioritize avoiding damage over speed.")
+            if im.Button("Close") then
+              im.CloseCurrentPopup()
+            end
+            im.EndPopup()
+          end
+        end
       end
 
       if im.CollapsingHeader1("Reward") then
@@ -650,6 +688,13 @@ local function onEditorGui()
         if race.driftGoal then
           im.InputInt("Drift Score", driftScore, 100, 10000)
           reward = utils.driftReward(race, realTime[0], driftScore[0])
+        elseif race.damageFactor and race.damageFactor > 0 then
+          im.SliderFloat("Damage % (Preview)", damagePercentage, 0.0, 1.0, "%.1f")
+          im.SameLine()
+          im.Text(string.format("(%.1f%%)", damagePercentage[0] * 100))
+          reward = utils.hybridRaceReward(race.bestTime, race.reward, realTime[0], race.damageFactor, damagePercentage[0])
+          im.Text(string.format("Damage Factor: %.2f | Time Factor: %.2f", 
+            race.damageFactor, 1.0 - race.damageFactor))
         else
           reward = utils.raceReward(race.bestTime, race.reward, realTime[0])
         end
@@ -675,6 +720,13 @@ local function onEditorGui()
         end
 
         im.Text(string.format("Calculated Reward: %.0f", reward))
+        
+        if race.damageFactor and race.damageFactor > 0 then
+          im.Separator()
+          im.TextColored(im.ImVec4(0.7, 0.7, 1.0, 1.0), "Damage-Based Scoring Enabled")
+          im.Text(string.format("- Time Component: %.0f%%", (1.0 - race.damageFactor) * 100))
+          im.Text(string.format("- Damage Component: %.0f%%", race.damageFactor * 100))
+        end
       end
       -- SECTION: Event Options
       if im.CollapsingHeader1("Event Options") then
@@ -709,6 +761,31 @@ local function onEditorGui()
         if im.Checkbox("Reverse", reverse) then
           race.reverse = reverse[0]
           changed = true
+        end
+        
+        -- Stationary Timeout
+        local timeout = im.IntPtr(race.timeout or 10)
+        if im.InputInt("Stationary Timeout (seconds)", timeout, 1, 5) then
+          race.timeout = math.max(1, timeout[0]) -- Ensure minimum value of 1 second
+          changed = true
+        end
+        im.SameLine()
+        if im.Button("?##timeout") then
+          im.OpenPopup("Timeout Help")
+        end
+        if im.BeginPopupModal("Timeout Help", nil, im.WindowFlags_AlwaysAutoResize) then
+          im.Text("Stationary Timeout determines how long a player can remain")
+          im.Text("stationary before the race is automatically cancelled.")
+          im.Separator()
+          im.BulletText("Lower values (5-10s): Fast-paced events")
+          im.BulletText("Higher values (15-30s): Methodical/technical events")
+          im.BulletText("Default: 10 seconds")
+          im.Separator()
+          im.Text("Players get countdown warnings before timeout.")
+          if im.Button("Close") then
+            im.CloseCurrentPopup()
+          end
+          im.EndPopup()
         end
       end
       

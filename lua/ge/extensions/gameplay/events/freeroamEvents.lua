@@ -558,6 +558,8 @@ local function onBeamNGTrigger(data)
                 end
             end
             initialVehicleDamage = utils.getVehicleDamage()
+            -- Set race-specific stationary timeout for hotlap restart
+            processRoad.setStationaryTimeout(races[raceName].timeout)
             checkpointManager.setRace(races[raceName], raceName)
             Assets:displayAssets(data)
             utils.playCheckpointSound()
@@ -611,6 +613,8 @@ local function onBeamNGTrigger(data)
             if races[raceName].checkpointRoad then
                 -- Clear existing nodes and checkpoints
                 processRoad.reset()
+                -- Set race-specific stationary timeout
+                processRoad.setStationaryTimeout(races[raceName].timeout)
                 local checkpoints, altCheckpoints = processRoad.getCheckpoints(races[raceName])
 
                 checkpointManager.createCheckpoints(checkpoints, altCheckpoints)
