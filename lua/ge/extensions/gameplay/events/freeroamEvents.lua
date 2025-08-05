@@ -30,10 +30,13 @@ local totalCheckpoints = 0
 local currentExpectedCheckpoint = 1
 local invalidLap = false
 
+local initialVehicleDamage = 0
+
 local mInventoryId = nil
 local newBestSession = false
 
 local races = nil
+local isReplay = false
 
 local function rewardLabel(raceName, newBestTime)
     local raceLabel = races[raceName].label
@@ -90,6 +93,7 @@ local function payoutRace()
     local time = race.bestTime
     local reward = race.reward
     local raceLabel = race.label
+    local damageFactor = race.damageFactor or 0
 
     -- Get appropriate time and reward values based on route type
     if mHotlap == mActiveRace then
@@ -107,14 +111,33 @@ local function payoutRace()
         raceLabel = raceLabel .. " (Hotlap)"
     end
 
+    -- Calculate damage percentage if damage factor is used
+    local damagePercentage = 0
+    if damageFactor > 0 then
+        local currentDamage = utils.getVehicleDamage()
+        local damageTaken = math.max(0, currentDamage - initialVehicleDamage)
+        local maxDamage = 100000 -- Default max damage
+        
+        -- Try to get vehicle value as max damage if in career mode
+        if career_career and career_career.isActive() and career_modules_valueCalculator then
+            maxDamage = career_modules_valueCalculator.getInventoryVehicleValue(mInventoryId, true)
+        end
+        
+        -- Calculate percentage of damage taken (0 = no damage, 1 = maximum damage)
+        damagePercentage = math.min(1, damageTaken / maxDamage)
+    end
+
     -- Calculate scores and rewards
     local driftScore = 0
     if race.driftGoal then
         driftScore = getDriftScore()
         reward = utils.driftReward(races[mActiveRace], time, driftScore)
+    elseif damageFactor > 0 then
+        reward = utils.hybridRaceReward(time, reward, in_race_time, damageFactor, damagePercentage)
     else
         reward = utils.raceReward(time, reward, in_race_time)
     end
+    print("reward: " .. reward)
 
     -- Handle leaderboard
     local leaderboardEntry = leaderboardManager.getLeaderboardEntry(mInventoryId, raceLabel)
@@ -130,7 +153,9 @@ local function payoutRace()
         time = in_race_time,
         splitTimes = mSplitTimes,
         driftScore = driftScore,
-        inventoryId = mInventoryId
+        inventoryId = mInventoryId,
+        damagePercentage = damagePercentage,
+        damageFactor = damageFactor
     }
 
     local newBest = leaderboardManager.addLeaderboardEntry(newEntry)
@@ -149,16 +174,36 @@ local function payoutRace()
         end
     else
         if newBest and not invalidLap then
-            message = message .. "New Best Time!\n"
+            if damageFactor > 0 then
+                message = message .. "New Best Score!\n"
+            else
+                message = message .. "New Best Time!\n"
+            end
         end
+        
+        -- Build basic time information
         if race.hotlap then
             message = message ..
                           string.format("%s\nTime: %s\nLap: %d", raceLabel, utils.formatTime(in_race_time), lapCount)
         else
             message = message .. string.format("%s\nTime: %s", raceLabel, utils.formatTime(in_race_time))
         end
+        
+        -- Add damage information for damage-based races
+        if damageFactor > 0 then
+            message = message .. string.format("\nDamage Taken: %.1f%% | Damage Factor: %.0f%%", 
+                damagePercentage * 100, damageFactor * 100)
+        end
+        
+        -- Show previous best information
         if newBest and not invalidLap and oldTime ~= math.huge then
-            message = message .. string.format("\nPrevious Best: %s", utils.formatTime(oldTime))
+            if damageFactor > 0 then
+                local oldDamagePercentage = leaderboardEntry and leaderboardEntry.damagePercentage or 0
+                message = message .. string.format("\nPrevious Best Time: %s | Previous Best Damage: %.1f%%", 
+                    utils.formatTime(oldTime), oldDamagePercentage * 100)
+            else
+                message = message .. string.format("\nPrevious Best: %s", utils.formatTime(oldTime))
+            end
         end
     end
 
@@ -377,7 +422,10 @@ local function exitRace()
         Assets:hideAllAssets()
         checkpointManager.removeCheckpoints()
         utils.displayMessage("You exited the race zone, Race cancelled", 3)
-        utils.restoreTrafficAmount()
+        core_jobsystem.create(function(job)
+            job.sleep(10)
+            utils.restoreTrafficAmount()
+        end)
         pits.clearSpeedLimit()
         newBestSession = false
         if gameplay_drift_general.getContext() == "inChallenge" then
@@ -391,7 +439,7 @@ local function exitRace()
 end
 
 local function onBeamNGTrigger(data)
-    if be:getPlayerVehicleID(0) ~= data.subjectID then
+    if be:getPlayerVehicleID(0) ~= data.subjectID or isReplay then
         return
     end
     if gameplay_walk.isWalking() then return end
@@ -509,6 +557,7 @@ local function onBeamNGTrigger(data)
                     return
                 end
             end
+            initialVehicleDamage = utils.getVehicleDamage()
             checkpointManager.setRace(races[raceName], raceName)
             Assets:displayAssets(data)
             utils.playCheckpointSound()
@@ -535,6 +584,7 @@ local function onBeamNGTrigger(data)
             if career_career.isActive() then
                 career_modules_pauseTime.enablePauseCounter(true)
             end
+            initialVehicleDamage = utils.getVehicleDamage()
             utils.saveAndSetTrafficAmount(0)
             checkpointManager.setRace(races[raceName], raceName)
             Assets:displayAssets(data)
@@ -667,7 +717,10 @@ local function onBeamNGTrigger(data)
             mSplitTimes = {}
             mActiveRace = nil
             utils.setActiveLight(raceName, "red")
+            core_jobsystem.create(function(job)
+                job.sleep(10)
             utils.restoreTrafficAmount()
+            end)
             if career_career.isActive() then
                 career_modules_pauseTime.enablePauseCounter()
             end
@@ -716,6 +769,7 @@ local function loadExtensions()
             if filename then
                 local extensionName = "gameplay_events_freeroam_" .. filename
                 setExtensionUnloadMode(extensionName, "manual")
+                extensions.unload(extensionName)
                 print("Loaded extension: " .. extensionName)
             end
         end
@@ -802,6 +856,15 @@ function M.onGetRawPoiListForLevel(levelIdentifier, elements)
     end
 end
 
+local function onReplayStateChanged(state)
+    if not isReplay and state.state == "playback" then
+        isReplay = true
+    elseif isReplay and state.state == "inactive" then
+        isReplay = false
+    end
+end
+
+M.onReplayStateChanged = onReplayStateChanged
 M.onBeamNGTrigger = onBeamNGTrigger
 M.onUpdate = onUpdate
 
