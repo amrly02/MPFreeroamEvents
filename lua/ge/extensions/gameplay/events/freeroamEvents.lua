@@ -13,6 +13,8 @@ local utils = require('gameplay/events/freeroam/utils')
 local pits = require('gameplay/events/freeroam/pits')
 local Assets = activeAssets.ActiveAssets.new()
 
+local loadedExtensions = {}
+
 local timerActive = false
 local mActiveRace
 local staged = nil
@@ -35,8 +37,13 @@ local initialVehicleDamage = 0
 local mInventoryId = nil
 local newBestSession = false
 
+local maxSpeed = 0
+
 local races = nil
 local isReplay = false
+
+local previousGameState = nil
+local saveGameState = false
 
 local function rewardLabel(raceName, newBestTime)
     local raceLabel = races[raceName].label
@@ -129,15 +136,17 @@ local function payoutRace()
 
     -- Calculate scores and rewards
     local driftScore = 0
-    if race.driftGoal then
+    if race.topSpeed then
+        reward = utils.topSpeedReward(race.topSpeedGoal, reward, maxSpeed, race.type)
+    elseif race.driftGoal then
         driftScore = getDriftScore()
         reward = utils.driftReward(races[mActiveRace], time, driftScore)
     elseif damageFactor > 0 then
-        reward = utils.hybridRaceReward(time, reward, in_race_time, damageFactor, damagePercentage)
+        reward = utils.hybridRaceReward(time, reward, in_race_time, damageFactor, damagePercentage, race.type)
     else
-        reward = utils.raceReward(time, reward, in_race_time)
+        reward = utils.raceReward(time, reward, in_race_time, race.type)
     end
-    print("reward: " .. reward)
+    print("Adjusted reward: " .. reward)
 
     -- Handle leaderboard
     local leaderboardEntry = leaderboardManager.getLeaderboardEntry(mInventoryId, raceLabel)
@@ -155,7 +164,8 @@ local function payoutRace()
         driftScore = driftScore,
         inventoryId = mInventoryId,
         damagePercentage = damagePercentage,
-        damageFactor = damageFactor
+        damageFactor = damageFactor,
+        topSpeed = maxSpeed
     }
 
     local newBest = leaderboardManager.addLeaderboardEntry(newEntry)
@@ -163,7 +173,16 @@ local function payoutRace()
     -- Build the base message that's shown regardless of career mode
     local message = invalidLap and "Lap Invalidated\n" or ""
 
-    if race.driftGoal then
+    if race.topSpeed then
+        message = message ..
+                      string.format("%s\nTop Speed: %.2f mph\nTime: %s", raceLabel, maxSpeed, utils.formatTime(in_race_time))
+        if oldTime then
+            local oldSpeed = leaderboardEntry and leaderboardEntry.topSpeed or 0
+            message = message ..
+                          string.format("\nPrevious Best Speed: %.2f mph\nPrevious Best Time: %s", oldSpeed,
+                    utils.formatTime(oldTime))
+        end
+    elseif race.driftGoal then
         message = message ..
                       string.format("%s\nDrift Score: %d\nTime: %s", raceLabel, driftScore,
                 utils.formatTime(in_race_time))
@@ -248,9 +267,6 @@ local function payoutRace()
                 },
                 beamXP = {
                     amount = math.floor(xp / 10)
-                },
-                vouchers = {
-                    amount = (oldTime == 0 or oldTime > time) and in_race_time < time and 1 or 0
                 }
             }
             for _, type in ipairs(race.type) do
@@ -313,10 +329,12 @@ local function payoutDragRace(raceName, finishTime, finishSpeed, vehId)
     local baseReward = raceData.reward
 
     -- Calculate reward based on performance
-    local reward = utils.raceReward(targetTime, baseReward, finishTime)
+    local reward = utils.raceReward(targetTime, baseReward, finishTime, raceData.type)
     if reward <= 0 then
         reward = baseReward / 2 -- Minimum reward for completion
     end
+
+    print("Adjusted drag reward: " .. reward)
 
     reward = reward / (career_modules_hardcore.isHardcoreMode() and 2 or 1)
 
@@ -332,9 +350,6 @@ local function payoutDragRace(raceName, finishTime, finishSpeed, vehId)
         },
         beamXP = {
             amount = math.floor(xp / 10)
-        },
-        vouchers = {
-            amount = newBestTime and 1 or 0
         }
     }
 
@@ -407,9 +422,36 @@ local function formatSplitDifference(diff)
     return string.format("%s%s", sign, utils.formatTime(math.abs(diff)))
 end
 
-local function exitRace()
+local function exitRace(isCompletion, customMessage, raceData, subjectID)
     if mActiveRace then
-        utils.setActiveLight(mActiveRace, "red")
+        local raceName = mActiveRace
+        if isCompletion then
+            -- Race completion logic
+            payoutRace()
+
+            -- Race-specific completion handling
+            if raceName == "drag" and raceData and subjectID then
+                local side = "l"
+                utils.updateDisplay(side, in_race_time, math.abs(be:getObjectVelocityXYZ(subjectID)) * speedUnit)
+            end
+
+            if raceData and utils.tableContains(raceData.type, "drift") then
+                local finalScore = getDriftScore()
+                if gameplay_drift_general.getContext() == "inChallenge" then
+                    gameplay_drift_general.setContext("inFreeRoam")
+                end
+            end
+
+            if customMessage then
+                utils.displayMessage(customMessage, 10, "Reward")
+            end
+        else
+            -- Race cancellation logic
+            local message = customMessage or "You exited the race zone, Race cancelled"
+            utils.displayMessage(message, 3)
+        end
+
+        utils.setActiveLight(raceName, "red")
         lapCount = 0
         mActiveRace = nil
         timerActive = false
@@ -419,9 +461,11 @@ local function exitRace()
         mAltRoute = false
         invalidLap = false
         mInventoryId = nil
+        maxSpeed = 0
         Assets:hideAllAssets()
         checkpointManager.removeCheckpoints()
-        utils.displayMessage("You exited the race zone, Race cancelled", 3)
+
+        -- Common cleanup tasks
         core_jobsystem.create(function(job)
             job.sleep(10)
             utils.restoreTrafficAmount()
@@ -435,6 +479,9 @@ local function exitRace()
         if career_career.isActive() then
             career_modules_pauseTime.enablePauseCounter()
         end
+        core_gamestate.setGameState(previousGameState.state, previousGameState.appLayout, previousGameState.menuItems, previousGameState.options)
+        previousGameState = nil
+        saveGameState = false
     end
 end
 
@@ -506,6 +553,9 @@ local function onBeamNGTrigger(data)
                 return
             end
 
+            saveGameState = true
+            core_gamestate.requestGameState()
+
             local vehicleSpeed = math.abs(be:getObjectVelocityXYZ(data.subjectID)) * speedUnit
             if vehicleSpeed > 5 and mActiveRace then
                 return
@@ -525,6 +575,33 @@ local function onBeamNGTrigger(data)
             end
             Assets:hideAllAssets()
             lapCount = 0
+
+            -- Check if ALL race types are disabled (only disable if every type is 0)
+            local allTypesDisabled = false
+            local disabledTypes = {}
+            if career_economyAdjuster and races[raceName].type then
+                local totalTypes = 0
+                local disabledCount = 0
+
+                for _, raceType in ipairs(races[raceName].type) do
+                    totalTypes = totalTypes + 1
+                    local multiplier = career_economyAdjuster.getEffectiveSectionMultiplier({raceType})
+                    if multiplier == 0 then
+                        disabledCount = disabledCount + 1
+                        table.insert(disabledTypes, raceType)
+                    end
+                end
+
+                -- Only disable if ALL types are disabled
+                allTypesDisabled = totalTypes > 0 and disabledCount == totalTypes
+            end
+
+            if allTypesDisabled then
+                -- Don't allow staging for disabled races
+                local typesString = table.concat(disabledTypes, ", ")
+                utils.displayMessage(string.format("%s is disabled due to %s multiplier(s) being set to 0.", races[raceName].label, typesString), 5)
+                return
+            end
 
             -- Initialize displays if drag race
             if raceName == "drag" then
@@ -558,7 +635,6 @@ local function onBeamNGTrigger(data)
                 end
             end
             initialVehicleDamage = utils.getVehicleDamage()
-            -- Set race-specific stationary timeout for hotlap restart
             processRoad.setStationaryTimeout(races[raceName].timeout)
             checkpointManager.setRace(races[raceName], raceName)
             Assets:displayAssets(data)
@@ -572,6 +648,7 @@ local function onBeamNGTrigger(data)
             checkpointManager.setAltRoute(false)
             mAltRoute = false
             in_race_time = 0
+            maxSpeed = 0
             timerActive = true
             checkpointsHit = 0
             totalCheckpoints = checkpointManager.calculateTotalCheckpoints()
@@ -592,6 +669,7 @@ local function onBeamNGTrigger(data)
             Assets:displayAssets(data)
             timerActive = true
             in_race_time = 0
+            maxSpeed = 0
             mActiveRace = raceName
             lapCount = 0
             mInventoryId = career_modules_inventory and career_modules_inventory.getInventoryIdFromVehicleId(data.subjectID) or data.subjectID
@@ -613,7 +691,6 @@ local function onBeamNGTrigger(data)
             if races[raceName].checkpointRoad then
                 -- Clear existing nodes and checkpoints
                 processRoad.reset()
-                -- Set race-specific stationary timeout
                 processRoad.setStationaryTimeout(races[raceName].timeout)
                 local checkpoints, altCheckpoints = processRoad.getCheckpoints(races[raceName])
 
@@ -699,35 +776,7 @@ local function onBeamNGTrigger(data)
 
     elseif triggerType == "finish" then
         if event == "enter" and mActiveRace == raceName then
-            -- Finish the race
-            timerActive = false
-            currCheckpoint = nil
-            payoutRace()
-            Assets:hideAllAssets()
-
-            if raceName == "drag" then
-                -- For drag races, update the display
-                local side = "l" -- Determine side based on context if necessary
-                utils.updateDisplay(side, in_race_time, math.abs(be:getObjectVelocityXYZ(data.subjectID)) * speedUnit)
-            end
-            if utils.tableContains(races[raceName].type, "drift") then
-                local finalScore = getDriftScore()
-                if gameplay_drift_general.getContext() == "inChallenge" then
-                    gameplay_drift_general.setContext("inFreeRoam")
-                    -- print("Final Drift Score: " .. tostring(math.floor(finalScore)), 1, "info")
-                end
-            end
-
-            mSplitTimes = {}
-            mActiveRace = nil
-            utils.setActiveLight(raceName, "red")
-            core_jobsystem.create(function(job)
-                job.sleep(10)
-            utils.restoreTrafficAmount()
-            end)
-            if career_career.isActive() then
-                career_modules_pauseTime.enablePauseCounter()
-            end
+            exitRace(true, nil, races[raceName], data.subjectID)
         end
     elseif triggerType == "pits" then
         if event == "enter" and mActiveRace == raceName then
@@ -774,11 +823,18 @@ local function loadExtensions()
                 local extensionName = "gameplay_events_freeroam_" .. filename
                 setExtensionUnloadMode(extensionName, "manual")
                 extensions.unload(extensionName)
+                table.insert(loadedExtensions, extensionName)
                 print("Loaded extension: " .. extensionName)
             end
         end
     end
     loadManualUnloadExtensions()
+end
+
+local function unloadExtensions()
+    for _, extensionName in ipairs(loadedExtensions) do
+        extensions.unload(extensionName)
+    end
 end
 
 local function onExtensionLoaded()
@@ -794,22 +850,25 @@ local function onExtensionLoaded()
     end
 end
 
-local function onUpdate(dtReal, dtSim, dtRaw)
+local function onExtensionUnloaded()
+    unloadExtensions()
+end
 
-    -- This function updates the race time.
-    -- It increments the in_race_time if the timer is active.
-    --
-    -- Parameters:
-    --   dtReal (number): Real delta time.
-    --   dtSim (number): Simulated delta time.
-    --   dtRaw (number): Raw delta time.
+local function onUpdate(dtReal, dtSim, dtRaw)
     if mActiveRace and races[mActiveRace].checkpointRoad then
         if processRoad.checkPlayerOnRoad() == false then
-            exitRace()
+            exitRace(false)
         end
     end
     if timerActive == true then
         in_race_time = in_race_time + dtSim
+        local playerVehicleId = be:getPlayerVehicleID(0)
+        if playerVehicleId then
+            local currentSpeed = math.abs(be:getObjectVelocityXYZ(playerVehicleId)) * speedUnit
+            if currentSpeed > maxSpeed then
+                maxSpeed = currentSpeed
+            end
+        end
     else
         in_race_time = 0
     end
@@ -868,6 +927,15 @@ local function onReplayStateChanged(state)
     end
 end
 
+local function onGameStateUpdate(state)
+    if saveGameState then
+        saveGameState = false
+        previousGameState = state
+    end
+end
+
+M.onGameStateUpdate = onGameStateUpdate
+
 M.onReplayStateChanged = onReplayStateChanged
 M.onBeamNGTrigger = onBeamNGTrigger
 M.onUpdate = onUpdate
@@ -878,5 +946,6 @@ M.onWorldReadyState = onWorldReadyState
 M.getRace = function(raceName) return races[raceName] end
 
 M.onExtensionLoaded = onExtensionLoaded
+M.onExtensionUnloaded = onExtensionUnloaded
 
 return M
