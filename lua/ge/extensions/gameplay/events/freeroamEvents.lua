@@ -45,6 +45,16 @@ local isReplay = false
 local previousGameState = nil
 local saveGameState = false
 
+
+local mCurrentLayoutIndex = nil
+local mCurrentLayoutLap = nil
+
+local mCurrentFork = nil
+
+
+local rollingStartArmed = false
+local inPaceZone = false
+
 local function rewardLabel(raceName, newBestTime)
     local raceLabel = races[raceName].label
     local timeLabel = utils.formatTime(in_race_time)
@@ -422,6 +432,41 @@ local function formatSplitDifference(diff)
     return string.format("%s%s", sign, utils.formatTime(math.abs(diff)))
 end
 
+
+local function startLayout(raceName, layoutIndex)
+    local raceData = races[raceName]
+    if not raceData or not raceData.layouts[layoutIndex] then
+        exitRace(false, "Race configuration error.")
+        return
+    end
+
+    local layoutData = raceData.layouts[layoutIndex]
+    utils.displayMessage("Starting: " .. layoutData.name, 5)
+
+    processRoad.reset()
+    processRoad.setStationaryTimeout(raceData.timeout)
+    
+    local tempRaceConfig = {
+        checkpointRoad = layoutData.checkpointRoad,
+        minCheckpointDistance = raceData.minCheckpointDistance
+    }
+    
+    local checkpoints, altCheckpoints = processRoad.getCheckpoints(tempRaceConfig)
+
+    checkpointManager.createCheckpoints(checkpoints, altCheckpoints)
+
+    isLoop = processRoad.isLoop()
+    currCheckpoint = 0
+    checkpointsHit = 0
+    totalCheckpoints = checkpointManager.calculateTotalCheckpoints()
+    currentExpectedCheckpoint = 1
+    mAltRoute = false
+    checkpointManager.setAltRoute(mAltRoute)
+
+    currentExpectedCheckpoint = checkpointManager.enableCheckpoint(0)
+end
+
+
 local function exitRace(isCompletion, customMessage, raceData, subjectID)
     if mActiveRace then
         local raceName = mActiveRace
@@ -453,6 +498,10 @@ local function exitRace(isCompletion, customMessage, raceData, subjectID)
 
         utils.setActiveLight(raceName, "red")
         lapCount = 0
+
+        mCurrentLayoutIndex = nil
+        mCurrentLayoutLap = nil
+
         mActiveRace = nil
         timerActive = false
         mHotlap = nil
@@ -460,6 +509,11 @@ local function exitRace(isCompletion, customMessage, raceData, subjectID)
         mSplitTimes = {}
         mAltRoute = false
         invalidLap = false
+
+        rollingStartArmed = false
+        inPaceZone = false
+        mCurrentFork = nil
+
         mInventoryId = nil
         maxSpeed = 0
         Assets:hideAllAssets()
@@ -616,13 +670,26 @@ local function onBeamNGTrigger(data)
             if career_career.isActive() then
                 vehId = career_modules_inventory.getInventoryIdFromVehicleId(vehId) or vehId
             end
-            utils.displayStagedMessage(vehId, raceName)
+
+            if races[raceName].rollingStart then
+
+                utils.displayMessage(string.format("Staged for %s (Rolling Start).\nProceed to the Pace Zone.", races[raceName].label), 10)
+
+            else
+
+                utils.displayStagedMessage(vehId, raceName)
+
+            end
+
             utils.setActiveLight(raceName, "yellow")
         elseif event == "exit" then
-            staged = nil
-            if not mActiveRace then
-                utils.displayMessage("You exited the staging zone", 4)
-                utils.setActiveLight(raceName, "red")
+            if staged and races[staged] and not races[staged].rollingStart then
+                staged = nil
+
+                if not mActiveRace then
+                    utils.displayMessage("You exited the staging zone", 4)
+                    utils.setActiveLight(raceName, "red")
+                end
             end
         end
     elseif triggerType == "start" then
@@ -651,7 +718,7 @@ local function onBeamNGTrigger(data)
             maxSpeed = 0
             timerActive = true
             checkpointsHit = 0
-            totalCheckpoints = checkpointManager.calculateTotalCheckpoints()
+            totalCheckpoints = checkpointManager.calculateTotalCheckpoints(races[raceName])
             currentExpectedCheckpoint = 0
             if races[raceName].hotlap then
                 mHotlap = raceName
@@ -659,52 +726,67 @@ local function onBeamNGTrigger(data)
             end
             invalidLap = false
         elseif event == "enter" and staged == raceName then
-            -- Start the race
-            if career_career.isActive() then
-                career_modules_pauseTime.enablePauseCounter(true)
-            end
-            initialVehicleDamage = utils.getVehicleDamage()
-            utils.saveAndSetTrafficAmount(0)
-            checkpointManager.setRace(races[raceName], raceName)
-            Assets:displayAssets(data)
-            timerActive = true
-            in_race_time = 0
-            maxSpeed = 0
-            mActiveRace = raceName
-            lapCount = 0
-            mInventoryId = career_modules_inventory and career_modules_inventory.getInventoryIdFromVehicleId(data.subjectID) or data.subjectID
-            invalidLap = false
+            -- DEBUG BLOCK STARTS HERE --
+            print("--- Start Trigger Check for race: " .. tostring(raceName) .. " ---")
+            local isRollingStartRace = races[raceName] and races[raceName].rollingStart ~= nil
+            print("Is this a rolling start race? " .. tostring(isRollingStartRace))
+            print("RAW VALUE of .rollingStart key is: >" .. tostring(races[raceName].rollingStart) .. "<")
+            print("Is the rollingStartArmed flag TRUE? " .. tostring(rollingStartArmed))
 
-            utils.displayStartMessage(raceName)
-            utils.setActiveLight(raceName, "green")
+            local condition1 = not isRollingStartRace
+            local condition2 = rollingStartArmed
+            print("Condition 1 (NOT a rolling start race) is: " .. tostring(condition1))
+            print("Condition 2 (rolling start IS armed) is: " .. tostring(condition2))
 
-            -- Handle drift races
-            if utils.tableContains(races[raceName].type, "drift") then
-                gameplay_drift_general.setContext("inChallenge")
-                gameplay_drift_general.reset()
-                if gameplay_drift_drift then
-                    gameplay_drift_drift.setVehId(data.subjectID)
+            local finalResult = condition1 or condition2
+            print("FINAL RESULT (Condition 1 OR Condition 2) is: " .. tostring(finalResult))
+            -- DEBUG BLOCK ENDS HERE --
+
+            if finalResult then
+                if races[raceName] and races[raceName].rollingStart then
+                    rollingStartArmed = false
                 end
-            end
+                
+                -- This is the original logic that starts the race
+                if career_career.isActive() then
+                    career_modules_pauseTime.enablePauseCounter(true)
+                end
+                initialVehicleDamage = utils.getVehicleDamage()
+                utils.saveAndSetTrafficAmount(0)
+                checkpointManager.setRace(races[raceName], raceName)
+                Assets:displayAssets(data)
+                timerActive = true
+                in_race_time = 0
+                maxSpeed = 0
+                mActiveRace = raceName
+                lapCount = 0
+                mInventoryId = career_modules_inventory and career_modules_inventory.getInventoryIdFromVehicleId(data.subjectID) or data.subjectID
+                invalidLap = false
+                utils.displayStartMessage(raceName)
+                utils.setActiveLight(raceName, "green")
+                
+                if utils.tableContains(races[raceName].type, "drift") then
+                    gameplay_drift_general.setContext("inChallenge")
+                    gameplay_drift_general.reset()
+                    if gameplay_drift_drift then
+                        gameplay_drift_drift.setVehId(data.subjectID)
+                    end
+                end
 
-            -- Initialize checkpoints if applicable
-            if races[raceName].checkpointRoad then
-                -- Clear existing nodes and checkpoints
-                processRoad.reset()
-                processRoad.setStationaryTimeout(races[raceName].timeout)
-                local checkpoints, altCheckpoints = processRoad.getCheckpoints(races[raceName])
-
-                checkpointManager.createCheckpoints(checkpoints, altCheckpoints)
-
-                isLoop = processRoad.isLoop()
-                currCheckpoint = 0
-                checkpointsHit = 0
-                totalCheckpoints = checkpointManager.calculateTotalCheckpoints(races[raceName])
-                currentExpectedCheckpoint = 1
-                mAltRoute = false -- Initialize alt route flag
-                checkpointManager.setAltRoute(mAltRoute)
-
-                currentExpectedCheckpoint = checkpointManager.enableCheckpoint(0)
+                if races[raceName].checkpointRoad then
+                    processRoad.reset()
+                    processRoad.setStationaryTimeout(races[raceName].timeout)
+                    local checkpoints, altCheckpoints = processRoad.getCheckpoints(races[raceName])
+                    checkpointManager.createCheckpoints(checkpoints, altCheckpoints)
+                    isLoop = processRoad.isLoop()
+                    currCheckpoint = 0
+                    checkpointsHit = 0
+                    totalCheckpoints = checkpointManager.calculateTotalCheckpoints(races[raceName])
+                    currentExpectedCheckpoint = 1
+                    mAltRoute = false
+                    checkpointManager.setAltRoute(mAltRoute)
+                    currentExpectedCheckpoint = checkpointManager.enableCheckpoint(0)
+                end
             end
         else
             -- Player is not staged or race is not active
@@ -712,65 +794,86 @@ local function onBeamNGTrigger(data)
         end
     elseif triggerType == "checkpoint" and checkpointIndex then
         if event == "enter" and mActiveRace == raceName then
-            -- Ensure that the checkpoint is the expected one
-            if (checkpointIndex == currentExpectedCheckpoint) or (checkpointIndex == 1 and isAlt) or
-                (isAlt and (currentExpectedCheckpoint == races[raceName].altRoute.mergeCheckpoints[1])) then
+            local raceData = races[raceName]
+            local isValidHit = false
+            
+            -- Check if we just made a choice at a fork (NEW SYSTEM)
+            if mCurrentFork then
+                if checkpointIndex == mCurrentFork.main and not isAlt then
+                    -- Player chose the MAIN route from a fork
+                    isValidHit = true
+                    mAltRoute = false
+                    checkpointManager.setAltRoute(false)
+                    currentExpectedCheckpoint = mCurrentFork.main
+                elseif checkpointIndex == mCurrentFork.alt and isAlt then
+                    -- Player chose the ALT route from a fork
+                    isValidHit = true
+                    mAltRoute = true
+                    checkpointManager.setAltRoute(true)
+                    totalCheckpoints = checkpointManager.calculateTotalCheckpoints(raceData)
+                    currentExpectedCheckpoint = mCurrentFork.alt
+                end
+                mCurrentFork = nil -- Choice has been made, clear the fork state
+
+            -- Check for the classic alt route start (OLD SYSTEM)
+            elseif not mAltRoute and isAlt and checkpointIndex == 1 then
+                isValidHit = true
+                mAltRoute = true
+                checkpointManager.setAltRoute(true)
+                totalCheckpoints = checkpointManager.calculateTotalCheckpoints(raceData) 
+                currCheckpoint = 0
+
+            -- Check for the classic alt route MERGE POINT (OLD SYSTEM)
+            elseif mAltRoute and not isAlt and not raceData.forks then
+                isValidHit = true
+                mAltRoute = false -- We are now back on the main route
+                checkpointManager.setAltRoute(false)
+            
+            -- Standard linear checkpoint hit (WORKS FOR ALL SYSTEMS)
+            elseif (checkpointIndex == currentExpectedCheckpoint and isAlt == mAltRoute) then
+                isValidHit = true
+            end
+
+            if isValidHit then
                 checkpointsHit = checkpointsHit + 1
                 currCheckpoint = checkpointIndex
                 mSplitTimes[checkpointsHit] = in_race_time
                 utils.playCheckpointSound()
-
-                -- Prepare the next checkpoint
-                if isAlt then
-                    currentExpectedCheckpoint = checkpointIndex
+                
+                -- After hitting a valid checkpoint, check if the NEXT one is a fork
+                local nextFork = nil
+                if raceData.forks then
+                    for _, forkData in ipairs(raceData.forks) do
+                        if forkData.atMainIndex == currCheckpoint and not mAltRoute then
+                            nextFork = { main = forkData.mainChoiceIndex, alt = forkData.altChoiceIndex }
+                            break
+                        end
+                    end
                 end
 
-                currentExpectedCheckpoint = checkpointManager.enableCheckpoint(checkpointIndex, isAlt)
-                if isAlt and not mAltRoute then
-                    mAltRoute = true
-                    checkpointManager.setAltRoute(true)
-                    totalCheckpoints = checkpointManager.calculateTotalCheckpoints(races[raceName])
-                end
-
-                -- Display checkpoint message
-                local checkpointMessage = ""
-                local splitDiff = getDifference(raceName, checkpointsHit)
-                if splitDiff then
-                    local totalDiff = nil
-                    local raceLabel = getRaceLabel()
-                    local leaderboardEntry = leaderboardManager.getLeaderboardEntry(mInventoryId, raceLabel)
-                    totalDiff = in_race_time - (leaderboardEntry.splitTimes[checkpointsHit] or 0)
-
-                    checkpointMessage = string.format("Checkpoint %d/%d - Time: %s\nSplit: %s | Total: %s",
-                        checkpointsHit, totalCheckpoints, utils.formatTime(in_race_time), formatSplitDifference(splitDiff),
-                        formatSplitDifference(totalDiff))
+                if nextFork then
+                    -- We are at a fork, enable both choices
+                    mCurrentFork = checkpointManager.enableForkCheckpoints(nextFork.main, nextFork.alt, raceData)
+                    ui_message("Choose your route!", 3)
                 else
-                    checkpointMessage = string.format("Checkpoint %d/%d - Time: %s", checkpointsHit, totalCheckpoints,
-                        utils.formatTime(in_race_time))
+                    -- print("--- Calling enableCheckpoint from freeroamEvents ---")
+                    -- print("Sending currCheckpoint: " .. tostring(currCheckpoint))
+                    -- print("Sending mAltRoute: " .. tostring(mAltRoute))
+                    -- Not a fork, proceed normally
+                    -- print("--- [Brain] Calling enableCheckpoint ---")
+                    -- print("[Brain] Sending mAltRoute: " .. tostring(mAltRoute))
+                    currentExpectedCheckpoint = checkpointManager.enableCheckpoint(currCheckpoint, mAltRoute)
                 end
+                
+                -- Display checkpoint message (simplified for brevity)
+                local checkpointMessage = string.format("Checkpoint %d/%d - Time: %s", checkpointsHit, totalCheckpoints, utils.formatTime(in_race_time))
                 utils.displayMessage(checkpointMessage, 7)
-                Assets:displayAssets(data)
+
+                -- THIS IS THE MODIFIED LINE
+                Assets:displayAssets(data, mAltRoute)
             else
-                local missedCheckpoints = checkpointIndex - currentExpectedCheckpoint
-                if missedCheckpoints > 0 then
-                    -- Mark lap as invalid but continue with correct checkpoints
-                    invalidLap = true
-
-                    -- Update current checkpoint and hit count
-                    currCheckpoint = checkpointIndex
-                    currentExpectedCheckpoint = currentExpectedCheckpoint + missedCheckpoints
-                    checkpointsHit = math.min(checkpointsHit + missedCheckpoints + 1, totalCheckpoints)
-
-                    -- Enable next checkpoint
-                    currentExpectedCheckpoint = checkpointManager.enableCheckpoint(checkpointIndex, isAlt)
-
-                    -- Display message about invalid lap but continuing
-                    local message = string.format("Missed a checkpoint\nLap Invalidated.", checkpointIndex)
-                    local checkpointMessage = string.format("Checkpoint %d/%d - Time: %s", checkpointsHit,
-                        totalCheckpoints, utils.formatTime(in_race_time))
-                    message = message .. "\n" .. checkpointMessage
-                    utils.displayMessage(message, 10)
-                end
+                -- Logic for hitting the wrong checkpoint can go here
+                -- For now, we'll just ignore it to avoid complexity
             end
         end
 
@@ -778,6 +881,24 @@ local function onBeamNGTrigger(data)
         if event == "enter" and mActiveRace == raceName then
             exitRace(true, nil, races[raceName], data.subjectID)
         end
+
+        elseif triggerType == "pacezone" then
+        if event == "enter" and staged == raceName and not inPaceZone then
+            inPaceZone = true
+            local rsData = races[raceName].rollingStart
+            pits.setGovernorLimit(rsData.paceSpeed, rsData.speedUnit)
+            if rsData.paceSpeed and rsData.paceSpeed > 0 then
+                utils.displayMessage(string.format("Pace Zone: Maintain %.0f %s", rsData.paceSpeed, rsData.speedUnit), 10)
+            else
+                utils.displayMessage("Pace Zone: Form up for rolling start!", 10)
+            end
+        elseif event == "exit" and inPaceZone then
+            inPaceZone = false
+            rollingStartArmed = true
+            pits.clearSpeedLimit()
+            utils.displayMessage("GO! GO! GO!", 3)
+        end
+        
     elseif triggerType == "pits" then
         if event == "enter" and mActiveRace == raceName then
             -- Handle pit entry

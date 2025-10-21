@@ -61,12 +61,21 @@ function ActiveAssets:getOldestAssetList()
     return self.assets[1]
 end
 
-function ActiveAssets:displayAssets(data)
+function ActiveAssets:displayAssets(data, isAltRoute)
     local triggerName = data.triggerName
     local newAssets = {}
 
     for i = 0, maxAssets - 1 do
-        local assetName = triggerName .. "asset" .. i
+
+        local assetName
+        if isAltRoute then
+            -- New naming for the alternate route
+            assetName = "alt_asset" .. i
+        else
+            -- Original naming for the main route
+            assetName = triggerName .. "asset" .. i
+        end
+
         local asset = scenetree.findObject(assetName)
         if asset then
             asset:setHidden(false)

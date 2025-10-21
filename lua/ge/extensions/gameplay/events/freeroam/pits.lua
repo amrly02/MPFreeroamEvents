@@ -5,6 +5,7 @@ local limitActive = false
 local applyingLimit = false
 local lastThrottleState = 0 -- Store the last known throttle state
 local forcingStop = false -- Flag to indicate if we're in "stop first" mode
+local limiterMode = "cruise" -- New variable to track which mode we're in
 
 -- Function to get throttle input from vehicle
 local function requestThrottleInput()
@@ -128,97 +129,103 @@ local function applySpeedLimit(dt)
   end
 end
 
--- Function to set a speed limit with unit conversion
-local function setSpeedLimit(limit, unit)
-  if not limit or limit <= 0 then
-    -- Disable speed limiting
-    activeSpeedLimit = nil
-    limitActive = false
-    applyingLimit = false
-    forcingStop = false
-    log('I', 'pits', 'Speed limit disabled')
-    return limitActive
+local function applyGovernorLimit(dt)
+  if not activeSpeedLimit or not limitActive then return end
+  local veh = be:getPlayerVehicle(0)
+  if not veh then return end
+  local vel = veh:getVelocity():length()
+  if forcingStop then
+    veh:queueLuaCommand("input.event('throttle', 0, 1, nil, nil, nil, 'code')")
+    veh:queueLuaCommand("input.event('brake', 0.85, 1, nil, nil, nil, 'code')")
+    if vel < 1.0 then
+      forcingStop = false
+      applyingLimit = false
+      if not career_career then
+        veh:queueLuaCommand([[ recovery.startRecovering() recovery.stopRecovering() ]])
+      end
+      veh:queueLuaCommand([[ input.event('brake', 0.5, 1) input.event('throttle', 0.5, 1) input.event('brake', 0, 1) input.event('throttle', 0, 1) ]])
+    end
+    return
   end
-  
-  -- Default unit is m/s if not specified
+  requestThrottleInput()
+  local maxAllowedThrottle = 1.0
+  local governorStartSpeed = activeSpeedLimit * 0.9
+  if vel > governorStartSpeed then
+    local progress = (vel - governorStartSpeed) / (activeSpeedLimit - governorStartSpeed)
+    progress = math.max(0, math.min(1, progress))
+    maxAllowedThrottle = 1.0 - progress
+  end
+  local finalThrottle = math.min(lastThrottleState, maxAllowedThrottle)
+  veh:queueLuaCommand("input.event('throttle', " .. finalThrottle .. ", 1, nil, nil, nil, 'code')")
+end
+
+local function _baseSetLimit(limit, unit)
+  if type(limit) ~= "number" or limit <= 0 then
+    activeSpeedLimit, limitActive, applyingLimit, forcingStop = nil, false, false, false
+    return false
+  end
   local limitInMPS = limit
-  local displayUnit = "m/s"
-  local displayValue = limit
-  
-  -- Convert from specified unit to m/s internally
   if unit then
     unit = string.upper(unit)
-    if unit == "MPH" then
-      limitInMPS = limit * 0.44704  -- Convert mph to m/s
-      displayUnit = "mph"
-      displayValue = limit
-    elseif unit == "KPH" then
-      limitInMPS = limit * 0.27778  -- Convert kph to m/s
-      displayUnit = "km/h"
-      displayValue = limit
-    end
-  else
-    -- When using m/s as input, we'll show km/h in the log for better readability
-    displayUnit = "km/h"
-    displayValue = math.floor(limit * 3.6)
+    if unit == "MPH" then limitInMPS = limit * 0.44704 end
+    if unit == "KPH" then limitInMPS = limit * 0.27778 end
   end
-  
-  -- Enable speed limiting with the converted value
   activeSpeedLimit = limitInMPS
   limitActive = true
-  
-  -- Log the limit in both the input unit and m/s for clarity
-  log('I', 'pits', 'Speed limit set to ' .. displayValue .. ' ' .. displayUnit .. 
-      ' (' .. string.format("%.2f", limitInMPS) .. ' m/s)')
-  
-  return limitActive
+  return true
+end
+
+local function setSpeedLimit(limit, unit)
+  if _baseSetLimit(limit, unit) then
+    limiterMode = "cruise"
+    log('I', 'pits', 'Cruise Control speed limit set.')
+  end
 end
 
 -- Function to first stop the vehicle completely, then apply speed limit
 local function stopThenLimit(limit, unit)
-  -- First set the target speed limit
-  setSpeedLimit(limit, unit)
-  
-  -- Enable force stop mode
-  forcingStop = true
-  limitActive = true
-  
-  log('I', 'pits', 'Stopping vehicle before applying speed limit...')
-  
-  return true
+  if setSpeedLimit(limit, unit) then
+    forcingStop = true
+    log('I', 'pits', 'Stopping vehicle before applying cruise control limit...')
+  end
+end
+
+local function setGovernorLimit(limit, unit)
+  if _baseSetLimit(limit, unit) then
+    limiterMode = "governor"
+    log('I', 'pits', 'Throttle Governor speed limit set.')
+  end
+end
+
+local function stopThenGovernor(limit, unit)
+  if setGovernorLimit(limit, unit) then
+    forcingStop = true
+    log('I', 'pits', 'Stopping vehicle before applying governor limit...')
+  end
 end
 
 -- Function to toggle the speed limit on/off without changing the value
 local function toggleSpeedLimit()
   limitActive = not limitActive
-  if limitActive and activeSpeedLimit then
-    -- Convert m/s to km/h for display
-    local speedKmh = math.floor(activeSpeedLimit * 3.6)
-    log('I', 'pits', 'Speed limit enabled: ' .. speedKmh .. ' km/h (' .. 
-        string.format("%.2f", activeSpeedLimit) .. ' m/s)')
-  else
-    be:getPlayerVehicle(0):queueLuaCommand([[
-      input.event('throttle', 1, 1)
-      input.event('brake', 0, 1)
-    ]])
-    log('I', 'pits', 'Speed limit disabled')
+  if not limitActive then
+    be:getPlayerVehicle(0):queueLuaCommand([[ input.event('throttle', 1, 1) input.event('brake', 0, 1) ]])
     forcingStop = false
   end
   return limitActive
 end
 
 local function clearSpeedLimit()
-  activeSpeedLimit = nil
-  limitActive = false
-  applyingLimit = false
-  forcingStop = false
-  log('I', 'pits', 'Speed limit disabled')
+  activeSpeedLimit, limitActive, applyingLimit, forcingStop, limiterMode = nil, false, false, false, "cruise"
 end
 
 -- Update function to be called in the vehicle update loop
 local function onUpdate(dt)
   if activeSpeedLimit and limitActive then
-    applySpeedLimit(dt)
+    if limiterMode == "governor" then
+      applyGovernorLimit(dt)
+    else -- Default to cruise control
+      applySpeedLimit(dt)
+    end
   end
 end
 
@@ -229,4 +236,7 @@ M.toggleSpeedLimit = toggleSpeedLimit
 M.stopThenLimit = stopThenLimit
 M.receiveThrottleInput = receiveThrottleInput
 M.clearSpeedLimit = clearSpeedLimit
+
+M.setGovernorLimit = setGovernorLimit
+M.stopThenGovernor = stopThenGovernor
 return M
