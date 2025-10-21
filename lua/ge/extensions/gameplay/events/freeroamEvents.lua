@@ -726,21 +726,7 @@ local function onBeamNGTrigger(data)
             end
             invalidLap = false
         elseif event == "enter" and staged == raceName then
-            -- DEBUG BLOCK STARTS HERE --
-            print("--- Start Trigger Check for race: " .. tostring(raceName) .. " ---")
-            local isRollingStartRace = races[raceName] and races[raceName].rollingStart ~= nil
-            print("Is this a rolling start race? " .. tostring(isRollingStartRace))
-            print("RAW VALUE of .rollingStart key is: >" .. tostring(races[raceName].rollingStart) .. "<")
-            print("Is the rollingStartArmed flag TRUE? " .. tostring(rollingStartArmed))
 
-            local condition1 = not isRollingStartRace
-            local condition2 = rollingStartArmed
-            print("Condition 1 (NOT a rolling start race) is: " .. tostring(condition1))
-            print("Condition 2 (rolling start IS armed) is: " .. tostring(condition2))
-
-            local finalResult = condition1 or condition2
-            print("FINAL RESULT (Condition 1 OR Condition 2) is: " .. tostring(finalResult))
-            -- DEBUG BLOCK ENDS HERE --
 
             if finalResult then
                 if races[raceName] and races[raceName].rollingStart then
