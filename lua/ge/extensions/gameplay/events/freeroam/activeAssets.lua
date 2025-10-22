@@ -1,7 +1,7 @@
 local M = {}
 
-local maxAssets = 6
-local maxActiveAssets = 2
+local maxAssets = 200
+local maxActiveAssets = 200
 local ActiveAssets = {}
 ActiveAssets.__index = ActiveAssets
 
