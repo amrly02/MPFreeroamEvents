@@ -151,22 +151,23 @@ local function resetActiveCheckpoints()
 end
 
 local function enableCheckpoint(checkpointIndex, alt)
-
     resetActiveCheckpoints()
 
     local expectedIndex
 
-    
+    -- This logic cleanly separates the two states.
     if mAltRoute then
-        -- choice 1: alternate route.
+        -- SCENARIO 1: We are currently on an alternate route.
         expectedIndex = checkpointIndex + 1
         
+        -- The next checkpoint to display MUST be blue.
         local currentCp = altCheckpoints and altCheckpoints[expectedIndex]
         if currentCp then
             if not currentCp.marker then createCheckpointMarker(expectedIndex, true) end
             currentCp.marker.instanceColor = ColorF(0, 0, 1, 0.7):asLinear4F() -- Blue
         end
 
+        -- The preview checkpoint (red) must also be from the alt route.
         local previewIndex = expectedIndex + 1
         local previewCp = altCheckpoints and altCheckpoints[previewIndex]
         if previewCp then
@@ -175,15 +176,17 @@ local function enableCheckpoint(checkpointIndex, alt)
         end
 
     else
-        -- choice 2: main route.
+        -- SCENARIO 2: We are currently on the main route.
         expectedIndex = checkpointIndex + 1
 
+        -- The next checkpoint to display MUST be green.
         local currentCp = checkpoints and checkpoints[expectedIndex]
         if currentCp then
             if not currentCp.marker then createCheckpointMarker(expectedIndex, false) end
             currentCp.marker.instanceColor = ColorF(0, 1, 0, 0.7):asLinear4F() -- Green
         end
 
+        -- The preview checkpoint (red) must also be from the main route.
         local previewIndex = expectedIndex + 1
         local previewCp = checkpoints and checkpoints[previewIndex]
         if previewCp then
@@ -191,6 +194,7 @@ local function enableCheckpoint(checkpointIndex, alt)
             previewCp.marker.instanceColor = ColorF(1, 0, 0, 0.5):asLinear4F() -- Red
         end
 
+        -- BACKWARDS COMPATIBILITY: If this is a classic race, ALSO show the first blue checkpoint.
         if race and race.altRoute and not race.forks and #altCheckpoints > 0 then
             local altStartCp = altCheckpoints[1]
             if altStartCp then
@@ -214,14 +218,14 @@ local function enableForkCheckpoints(mainIndex, altIndex, raceData)
             mainCp = createCheckpointMarker(mainIndex, false)
         end
         -- Color for a choice, e.g., blue
-        mainCp.marker.instanceColor = ColorF(0, 1, 0, 0.7):asLinear4F() 
+        mainCp.marker.instanceColor = ColorF(0, 0, 1, 0.7):asLinear4F() 
     end
 
     if altCp then
         if not altCp.marker then
             altCp = createCheckpointMarker(altIndex, true)
         end
-        -- Color for b choice, e.g., blue
+        -- Color for a choice, e.g., blue
         altCp.marker.instanceColor = ColorF(0, 0, 1, 0.7):asLinear4F()
     end
 
@@ -299,7 +303,6 @@ local function calculateTotalCheckpoints(raceData)
 end
 
 local function setAltRoute(altRoute)
-    mAltRoute = altRoute
 end
 
 local function setRace(inputRace, inputRaceName)

@@ -1,7 +1,7 @@
 local M = {}
 
-local maxAssets = 200
-local maxActiveAssets = 200
+local maxAssets = 100
+local maxActiveAssets = 100
 local ActiveAssets = {}
 ActiveAssets.__index = ActiveAssets
 
@@ -66,13 +66,12 @@ function ActiveAssets:displayAssets(data, isAltRoute)
     local newAssets = {}
 
     for i = 0, maxAssets - 1 do
-
         local assetName
         if isAltRoute then
-            -- New naming for the alternate route
+            -- New naming for the altRoute
             assetName = "alt_asset" .. i
         else
-            -- Original naming for the main route
+            -- naming for the main route
             assetName = triggerName .. "asset" .. i
         end
 
