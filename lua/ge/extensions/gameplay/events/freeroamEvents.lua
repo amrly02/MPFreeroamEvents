@@ -867,6 +867,7 @@ local function onBeamNGTrigger(data)
     elseif triggerType == "finish" then
         if event == "enter" and mActiveRace == raceName then
             exitRace(true, nil, races[raceName], data.subjectID)
+            staged = nil
         end
 
         elseif triggerType == "pacezone" then
@@ -884,7 +885,6 @@ local function onBeamNGTrigger(data)
             rollingStartArmed = true
             pits.clearSpeedLimit()
             utils.displayMessage("GO! GO! GO!", 3)
-            staged = nil
         end
         
     elseif triggerType == "pits" then
