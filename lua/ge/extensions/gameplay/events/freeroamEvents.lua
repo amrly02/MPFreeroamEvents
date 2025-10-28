@@ -494,6 +494,7 @@ local function exitRace(isCompletion, customMessage, raceData, subjectID)
             -- Race cancellation logic
             local message = customMessage or "You exited the race zone, Race cancelled"
             utils.displayMessage(message, 3)
+            staged = nil
         end
 
         utils.setActiveLight(raceName, "red")
@@ -883,6 +884,7 @@ local function onBeamNGTrigger(data)
             rollingStartArmed = true
             pits.clearSpeedLimit()
             utils.displayMessage("GO! GO! GO!", 3)
+            staged = nil
         end
         
     elseif triggerType == "pits" then
